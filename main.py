@@ -88,6 +88,9 @@ def GetSearchArea(Frame, ScaleFactor=2):
 
 if __name__ == '__main__':
 
+    cumulative_H = np.eye(3)
+    overall_translation = np.eye(3)
+
     #start timer
     start = time.time()
 
@@ -160,37 +163,111 @@ if __name__ == '__main__':
         src_pts = np.float32([keypoints1_coords[m.queryIdx] for m in good_matches]).reshape(-1, 1, 2)
         dst_pts = np.float32([keypoints2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
 
-        H, mask = cv.findHomography(src_pts, dst_pts, cv.RANSAC, 5.0)
+        H, status = cv.findHomography(src_pts, dst_pts, cv.RANSAC, 5.0)
+
+        if np.sum(status) == 0:
+            print("No inliers found in RANSAC")
+            print("Iteration: ", i+1)
+            continue
+
+        if np.all(H == 0):
+            print("No homography found")
+            print("Iteration: ", i+1)
+            continue
+        # H, _ = cv.findHomography(src_pts, dst_pts, cv.RANSAC, 3.0)
+
+        if np.linalg.det(H) == 0:
+            print("Homography is singular")
+            print("Iteration: ", i+1)
+            continue
 
         H_inv = np.linalg.inv(H)
 
         second_img_h = additional_img.shape[0]
         second_img_w = additional_img.shape[1]
+
         corners_img2 = np.float32([[0, 0], 
                                    [0, second_img_h], 
                                    [second_img_w, second_img_h], 
                                    [second_img_w, 0]]) \
                                    .reshape(-1, 1, 2)
+
+        warped_corners_img2 = cv.perspectiveTransform(corners_img2, cumulative_H @ H_inv)
+        main_canvas_corners = np.float32([[0, 0], 
+                                          [0, main_canvas.shape[0]], 
+                                          [main_canvas.shape[1], main_canvas.shape[0]], 
+                                          [main_canvas.shape[1], 0]]) \
+                                          .reshape(-1, 1, 2)
         
-        warped_corners_img2 = cv.perspectiveTransform(corners_img2, H_inv)
         all_corners = np.concatenate((corners_img2, warped_corners_img2), axis=0)
+        # all_corners = np.concatenate((main_canvas_corners, warped_corners_img2), axis=0)
 
         [x_min, y_min] = np.int32(all_corners.min(axis=0).ravel() - 0.5)
         [x_max, y_max] = np.int32(all_corners.max(axis=0).ravel() + 0.5)
 
         translation_dist = [-x_min, -y_min]
 
+        # x_min += overall_translation[0, 2]
+        # y_min += overall_translation[1, 2]
+
+        # x_max += overall_translation[0, 2]
+        # y_max += overall_translation[1, 2]
+
         translation_matrix = np.array([[1, 0, translation_dist[0]], 
                                        [0, 1, translation_dist[1]], 
                                        [0, 0, 1]])
         
-        # Create the affine translation matrix
-        translation_matrix_affine = np.array([
-            [1, 0, translation_dist[0]],
-            [0, 1, translation_dist[1]]
-        ], dtype=np.float32)
-        H_translation = translation_matrix @ H_inv
+        overall_translation = overall_translation @ translation_matrix
+        
+        # H_translation = cumulative_H @ translation_matrix @ H_inv
+        # H_translation = translation_matrix @ cumulative_H @ H_inv
+        # H_translation = cumulative_H @ H_inv @ translation_matrix 
+
+        H_translation = overall_translation @ H_inv
+
+        # warped_corners_with_translation = cv.perspectiveTransform(corners_img2, H_translation)
+
+        # all_corners_with_translation = np.concatenate((main_canvas_corners, warped_corners_with_translation), axis=0)
+
+        # [new_x_min, new_y_min] = np.int32(all_corners_with_translation.min(axis=0).ravel() - 0.5)
+        # [new_x_max, new_y_max] = np.int32(all_corners_with_translation.max(axis=0).ravel() + 0.5)
+
+        cumulative_H = H_translation
+        # Normalize the cumulative homography
+        if not np.isclose(cumulative_H[2, 2], 1.0, atol=1e-6):
+            cumulative_H /= cumulative_H[2, 2]
+            # print("Normalized Cumulative H:", cumulative_H)
+
+        # Extract rotation and scaling (upper-left 2x2 matrix)
+        # rotation_scaling = cumulative_H[:2, :2]
+
+        # Extract translation (last column)
+        # translation = cumulative_H[:2, 2]
+
+        # print("STITCHING IMAGE: ", i+1)
+
+        # print("CUMULATIVE H:")
+        # print(cumulative_H)
+        # print("Rotation & Scaling:")
+        # print(rotation_scaling)
+        # print("Translation:")
+        # print(translation)
+        # theta = np.arctan2(rotation_scaling[1, 0], rotation_scaling[0, 0]) * 180 / np.pi
+        # print("Rotation Angle (degrees):", theta)
+
+
+        # print("TRANSLATION MATRIX:") 
+        # print(translation_matrix)
+        # print("H INV: ") 
+        # print(H_inv)
+
+        # H_translation =  H_inv
         # H_translation = H @ translation_matrix
+        # new_warped_corners_img2 = cv.perspectiveTransform(corners_img2, cumulative_H)
+        # all_corners = np.concatenate((corners_img2, new_warped_corners_img2), axis=0)
+
+        # [x_min, y_min] = np.int32(all_corners.min(axis=0).ravel() - 0.5)
+        # [x_max, y_max] = np.int32(all_corners.max(axis=0).ravel() + 0.5)
 
         x_main_canvas_min = min(main_canvas.shape[1], x_min)
         y_main_canvas_min = min(main_canvas.shape[0], y_min)
@@ -198,9 +275,21 @@ if __name__ == '__main__':
         x_main_canvas_max = max(main_canvas.shape[1], x_max)
         y_main_canvas_max = max(main_canvas.shape[0], y_max)
 
+        # x_main_canvas_min = min(main_canvas.shape[1], new_x_min)
+        # y_main_canvas_min = min(main_canvas.shape[0], new_y_min)
+
+        # x_main_canvas_max = max(main_canvas.shape[1], new_x_max)
+        # y_main_canvas_max = max(main_canvas.shape[0], new_y_max)
+
+        # print("x_main_canvas_min: ", x_main_canvas_min)
+        # print("y_main_canvas_min: ", y_main_canvas_min)
+        # print("x_main_canvas_max: ", x_main_canvas_max)
+        # print("y_main_canvas_max: ", y_main_canvas_max)
+
         new_width = x_main_canvas_max - x_main_canvas_min
         new_height = y_main_canvas_max - y_main_canvas_min
-        warped_additional_img = cv.warpPerspective(additional_img, H_translation, (new_width, new_height))
+        # warped_additional_img = cv.warpPerspective(additional_img, H_translation, (new_width, new_height))
+        warped_additional_img = cv.warpPerspective(additional_img, cumulative_H, (new_width, new_height))
 
         mask1 = np.zeros((new_height, new_width), dtype=np.float32)
         mask2 = np.zeros((new_height, new_width), dtype=np.float32)
@@ -210,12 +299,18 @@ if __name__ == '__main__':
 
         new_main_canvas = np.zeros((new_height, new_width, 3), np.uint8)
         print("NEW MAIN CANVAS SIZE: ", new_main_canvas.shape)
+        print("ITERATION: ", i+1)
+        print(" ")
         new_main_canvas[y_offset:main_canvas.shape[0]+y_offset, x_offset:main_canvas.shape[1]+x_offset] = main_canvas
-        mask1[y_offset:main_canvas.shape[0]+y_offset, x_offset:main_canvas.shape[1]+x_offset] = 1
+        # mask1[y_offset:main_canvas.shape[0]+y_offset, x_offset:main_canvas.shape[1]+x_offset] = 1
+        
+        #set mask only where main_canvas is not black
+        mask1[y_offset:main_canvas.shape[0]+y_offset, x_offset:main_canvas.shape[1]+x_offset] = cv.cvtColor(main_canvas, cv.COLOR_BGR2GRAY) > 0
 
         warped_img2_gray = cv.cvtColor(warped_additional_img, cv.COLOR_BGR2GRAY)
         mask2[warped_img2_gray > 0] = 1
 
+        # if photos overlay result will be 0.5 for both masks, blending will be 50/50
         alpha = mask1 / (mask1 + mask2 + 1e-10)
         beta = 1 - alpha
 
@@ -265,16 +360,27 @@ if __name__ == '__main__':
         kp_storage.add_or_update_keypoints(not_matched_keypoints, not_matched_descriptors, color=color, reliability_multiplier=0.7, iteration=i+1)
 
         keypoints2_coords = np.array([kp.pt for kp in new_keypoints], dtype=np.float32).reshape(-1, 1, 2)
+
         keypoints2_coords_transformed = cv.perspectiveTransform(keypoints2_coords, H_inv)
-        keypoints2_transformed = [cv.KeyPoint(x=pt[0][0], y=pt[0][1], size=1) for pt in keypoints2_coords_transformed]
+
+        if keypoints2_coords_transformed is None:
+            print("ERROR: keypoints2_coords_transformed is None, cannot add to storage")
+        else:
+            keypoints2_transformed = [cv.KeyPoint(x=pt[0][0], y=pt[0][1], size=1) for pt in keypoints2_coords_transformed]
+            kp_storage.add_or_update_keypoints(keypoints2_transformed, new_descriptors, color=color, iteration=i+1)
+        
+        # keypoints2_transformed = [cv.KeyPoint(x=pt[0][0], y=pt[0][1], size=1) for pt in keypoints2_coords_transformed]
+        # if keypoints2_transformed is None:
+        #     print("ERROR: keypoints2_transformed is None, cannot add to storage")
+        # else:
+        #     kp_storage.add_or_update_keypoints(keypoints2_transformed, new_descriptors, color=color, iteration=i+1)
         # keypoints2_coords = np.array([kp.pt for kp in keypoints2], dtype=np.float32).reshape(-1, 1, 2)
         # keypoints2_coords_transformed = cv.perspectiveTransform(keypoints2_coords, H_inv)
         # keypoints2_transformed = [cv.KeyPoint(x=pt[0][0], y=pt[0][1], size=1) for pt in keypoints2_coords_transformed]
 
-        kp_storage.add_or_update_keypoints(keypoints2_transformed, new_descriptors, color=color, iteration=i+1)
 
         visualisation = kp_storage.visualize_keypoints()
-        cv.imwrite(f'keypoints_storage_{i}.png', visualisation)
+        cv.imwrite(f'out/keypoints/golf/keypoints_storage_{i}.png', visualisation)
         # print("PREVIOUS BOX: ", previous_box)
 
         main_canvas = new_main_canvas
@@ -301,7 +407,7 @@ if __name__ == '__main__':
         # cv.imshow('Matches', matches_img)
         # cv.waitKey(0)
 
-    cv.imwrite(f'blended_img_cnt{range_imgs+1}.png', main_canvas)
+    cv.imwrite(f'out/blended/golf/blended_img_cnt{range_imgs+1}.png', main_canvas)
 
     # count runtime
     end = time.time()
