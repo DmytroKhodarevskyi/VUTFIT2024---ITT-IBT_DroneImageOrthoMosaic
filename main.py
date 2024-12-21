@@ -88,8 +88,10 @@ def GetSearchArea(Frame, ScaleFactor=2):
 
 if __name__ == '__main__':
 
-    cumulative_H = np.eye(3)
-    overall_translation = np.eye(3)
+    # cumulative_H = np.eye(3)
+    # overall_translation = np.eye(3)
+
+    cumulative_transform = np.eye(3)
 
     #start timer
     start = time.time()
@@ -183,141 +185,54 @@ if __name__ == '__main__':
 
         H_inv = np.linalg.inv(H)
 
-        second_img_h = additional_img.shape[0]
-        second_img_w = additional_img.shape[1]
-
-        corners_img2 = np.float32([[0, 0], 
-                                   [0, second_img_h], 
-                                   [second_img_w, second_img_h], 
-                                   [second_img_w, 0]]) \
-                                   .reshape(-1, 1, 2)
-
-        warped_corners_img2 = cv.perspectiveTransform(corners_img2, cumulative_H @ H_inv)
-        main_canvas_corners = np.float32([[0, 0], 
-                                          [0, main_canvas.shape[0]], 
-                                          [main_canvas.shape[1], main_canvas.shape[0]], 
-                                          [main_canvas.shape[1], 0]]) \
-                                          .reshape(-1, 1, 2)
+        h_add, w_add = additional_img.shape[:2]
+        h_main, w_main = main_canvas.shape[:2]
         
-        all_corners = np.concatenate((corners_img2, warped_corners_img2), axis=0)
-        # all_corners = np.concatenate((main_canvas_corners, warped_corners_img2), axis=0)
+        corners_add = np.array([[0, 0], [w_add, 0], [w_add, h_add], [0, h_add]], dtype=np.float32).reshape(-1, 1, 2)
+        corners_main = np.array([[0, 0], [w_main, 0], [w_main, h_main], [0, h_main]], dtype=np.float32).reshape(-1, 1, 2)
+        
+        # transformed_corners_add = cv.perspectiveTransform(corners_add, H_inv)
+        transformed_corners_add = cv.perspectiveTransform(corners_add, cumulative_transform @ H_inv)
+        all_corners = np.concatenate((corners_main, transformed_corners_add), axis=0)
 
         [x_min, y_min] = np.int32(all_corners.min(axis=0).ravel() - 0.5)
         [x_max, y_max] = np.int32(all_corners.max(axis=0).ravel() + 0.5)
 
-        translation_dist = [-x_min, -y_min]
+        translation_matrix = np.array([[1, 0, -x_min],
+                                    [0, 1, -y_min],
+                                    [0, 0, 1]], dtype=np.float32)
 
-        # x_min += overall_translation[0, 2]
-        # y_min += overall_translation[1, 2]
+        cumulative_transform = translation_matrix @ cumulative_transform
 
-        # x_max += overall_translation[0, 2]
-        # y_max += overall_translation[1, 2]
+        out_width = x_max - x_min
+        out_height = y_max - y_min
 
-        translation_matrix = np.array([[1, 0, translation_dist[0]], 
-                                       [0, 1, translation_dist[1]], 
-                                       [0, 0, 1]])
-        
-        overall_translation = overall_translation @ translation_matrix
-        
-        # H_translation = cumulative_H @ translation_matrix @ H_inv
-        # H_translation = translation_matrix @ cumulative_H @ H_inv
-        # H_translation = cumulative_H @ H_inv @ translation_matrix 
+        # warped_additional = cv.warpPerspective(additional_img, translation_matrix @ H_inv, (out_width, out_height))
+        warped_additional = cv.warpPerspective(additional_img, cumulative_transform @ H_inv, (out_width, out_height))
 
-        H_translation = overall_translation @ H_inv
+        translated_main_canvas = cv.warpPerspective(main_canvas, translation_matrix, (out_width, out_height))
 
-        # warped_corners_with_translation = cv.perspectiveTransform(corners_img2, H_translation)
-
-        # all_corners_with_translation = np.concatenate((main_canvas_corners, warped_corners_with_translation), axis=0)
-
-        # [new_x_min, new_y_min] = np.int32(all_corners_with_translation.min(axis=0).ravel() - 0.5)
-        # [new_x_max, new_y_max] = np.int32(all_corners_with_translation.max(axis=0).ravel() + 0.5)
-
-        cumulative_H = H_translation
-        # Normalize the cumulative homography
-        if not np.isclose(cumulative_H[2, 2], 1.0, atol=1e-6):
-            cumulative_H /= cumulative_H[2, 2]
-            # print("Normalized Cumulative H:", cumulative_H)
-
-        # Extract rotation and scaling (upper-left 2x2 matrix)
-        # rotation_scaling = cumulative_H[:2, :2]
-
-        # Extract translation (last column)
-        # translation = cumulative_H[:2, 2]
-
-        # print("STITCHING IMAGE: ", i+1)
-
-        # print("CUMULATIVE H:")
-        # print(cumulative_H)
-        # print("Rotation & Scaling:")
-        # print(rotation_scaling)
-        # print("Translation:")
-        # print(translation)
-        # theta = np.arctan2(rotation_scaling[1, 0], rotation_scaling[0, 0]) * 180 / np.pi
-        # print("Rotation Angle (degrees):", theta)
+        mask_additional = (warped_additional > 0).astype(np.uint8)
+        # mask_main_canvas = (translated_main_canvas > 0).astype(np.uint8)
+        mask_main_canvas = 1 - mask_additional
 
 
-        # print("TRANSLATION MATRIX:") 
-        # print(translation_matrix)
-        # print("H INV: ") 
-        # print(H_inv)
+        combined_mask = mask_additional + mask_main_canvas
+        combined_mask[combined_mask == 0] = 1
 
-        # H_translation =  H_inv
-        # H_translation = H @ translation_matrix
-        # new_warped_corners_img2 = cv.perspectiveTransform(corners_img2, cumulative_H)
-        # all_corners = np.concatenate((corners_img2, new_warped_corners_img2), axis=0)
+        # blended_img = (warped_additional + translated_main_canvas) / combined_mask
+        # blended = ((translated_main_canvas.astype(np.float32) + warped_additional.astype(np.float32)) / combined_mask).astype(np.uint8)
+        # overlapped = (translated_main_canvas * mask_main_canvas) + (warped_additional * mask_additional)
+        blended = (translated_main_canvas * mask_main_canvas) + (warped_additional * mask_additional)
 
-        # [x_min, y_min] = np.int32(all_corners.min(axis=0).ravel() - 0.5)
-        # [x_max, y_max] = np.int32(all_corners.max(axis=0).ravel() + 0.5)
 
-        x_main_canvas_min = min(main_canvas.shape[1], x_min)
-        y_main_canvas_min = min(main_canvas.shape[0], y_min)
+        overlapped = (translated_main_canvas * mask_main_canvas) + (warped_additional * mask_additional)
 
-        x_main_canvas_max = max(main_canvas.shape[1], x_max)
-        y_main_canvas_max = max(main_canvas.shape[0], y_max)
 
-        # x_main_canvas_min = min(main_canvas.shape[1], new_x_min)
-        # y_main_canvas_min = min(main_canvas.shape[0], new_y_min)
+        # cv.imwrite(f'out/blended/golf/blended_img_test_{i}.png', blended)
 
-        # x_main_canvas_max = max(main_canvas.shape[1], new_x_max)
-        # y_main_canvas_max = max(main_canvas.shape[0], new_y_max)
-
-        # print("x_main_canvas_min: ", x_main_canvas_min)
-        # print("y_main_canvas_min: ", y_main_canvas_min)
-        # print("x_main_canvas_max: ", x_main_canvas_max)
-        # print("y_main_canvas_max: ", y_main_canvas_max)
-
-        new_width = x_main_canvas_max - x_main_canvas_min
-        new_height = y_main_canvas_max - y_main_canvas_min
-        # warped_additional_img = cv.warpPerspective(additional_img, H_translation, (new_width, new_height))
-        warped_additional_img = cv.warpPerspective(additional_img, cumulative_H, (new_width, new_height))
-
-        mask1 = np.zeros((new_height, new_width), dtype=np.float32)
-        mask2 = np.zeros((new_height, new_width), dtype=np.float32)
-
-        x_offset = translation_dist[0]
-        y_offset = translation_dist[1]
-
-        new_main_canvas = np.zeros((new_height, new_width, 3), np.uint8)
-        print("NEW MAIN CANVAS SIZE: ", new_main_canvas.shape)
-        print("ITERATION: ", i+1)
-        print(" ")
-        new_main_canvas[y_offset:main_canvas.shape[0]+y_offset, x_offset:main_canvas.shape[1]+x_offset] = main_canvas
-        # mask1[y_offset:main_canvas.shape[0]+y_offset, x_offset:main_canvas.shape[1]+x_offset] = 1
-        
-        #set mask only where main_canvas is not black
-        mask1[y_offset:main_canvas.shape[0]+y_offset, x_offset:main_canvas.shape[1]+x_offset] = cv.cvtColor(main_canvas, cv.COLOR_BGR2GRAY) > 0
-
-        warped_img2_gray = cv.cvtColor(warped_additional_img, cv.COLOR_BGR2GRAY)
-        mask2[warped_img2_gray > 0] = 1
-
-        # if photos overlay result will be 0.5 for both masks, blending will be 50/50
-        alpha = mask1 / (mask1 + mask2 + 1e-10)
-        beta = 1 - alpha
-
-        for c in range(3):
-            new_main_canvas[:, :, c] = (alpha * new_main_canvas[:, :, c] + beta * warped_additional_img[:, :, c]).astype(np.uint8)
-
-        previous_box = warped_corners_img2.reshape(-1, 2)
+        # previous_box = warped_corners_img2.reshape(-1, 2)
+        previous_box = transformed_corners_add.reshape(-1, 2)
 
         ################### ADD KEYPOINTS TO STORAGE ###################
         matched_keypoints = []
@@ -341,8 +256,9 @@ if __name__ == '__main__':
         ############ update realability by 0.7 to points that are not matched, but lying within the search area and new image area ########
 
         search_area_polygon = Polygon(SearchArea.reshape(-1, 2))
-        new_image_bounding_box = cv.boundingRect(warped_corners_img2)
-        new_image_polygon = Polygon(warped_corners_img2.reshape(-1, 2))
+        # new_image_bounding_box = cv.boundingRect(warped_corners_img2)
+        # new_image_polygon = Polygon(warped_corners_img2.reshape(-1, 2))
+        new_image_polygon = Polygon(transformed_corners_add.reshape(-1, 2))
 
         not_matched_keypoints = []
         not_matched_descriptors = []
@@ -380,10 +296,13 @@ if __name__ == '__main__':
 
 
         visualisation = kp_storage.visualize_keypoints()
-        cv.imwrite(f'out/keypoints/golf/keypoints_storage_{i}.png', visualisation)
+        # cv.imwrite(f'out/keypoints/golf/keypoints_storage_{i}.png', visualisation)
+        cv.imwrite(f'out/keypoints/highway/keypoints_storage_{i}.png', visualisation)
         # print("PREVIOUS BOX: ", previous_box)
 
-        main_canvas = new_main_canvas
+        # main_canvas = new_main_canvas
+        print("Iteration: ", i+1)
+        main_canvas = blended
 
         ################### DRAW MATCHES ###################
 
@@ -407,7 +326,8 @@ if __name__ == '__main__':
         # cv.imshow('Matches', matches_img)
         # cv.waitKey(0)
 
-    cv.imwrite(f'out/blended/golf/blended_img_cnt{range_imgs+1}.png', main_canvas)
+    # cv.imwrite(f'out/blended/golf/blended_img_cnt{range_imgs+1}.png', main_canvas)
+    cv.imwrite(f'out/blended/highway/blended_img_cnt{range_imgs+1}.png', main_canvas)
 
     # count runtime
     end = time.time()

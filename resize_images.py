@@ -2,8 +2,9 @@ import os
 from PIL import Image
 
 # Paths
-src_folder = os.path.join("src", "DroneMapper_Golf9_May2016")
-output_folder = os.path.join("src", "resized_photos")
+# src_folder = os.path.join("src", "DroneMapper_Golf9_May2016")
+src_folder = os.path.join("src", "Dominican_Highway")
+output_folder = os.path.join("src", "resized_photos_highway")
 
 # Target resolution
 target_width = 1920
