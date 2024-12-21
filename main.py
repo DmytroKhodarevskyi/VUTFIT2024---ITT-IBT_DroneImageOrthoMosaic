@@ -9,6 +9,9 @@ from shapely.geometry import Point, Polygon
 
 
 import KeypointStorage as kp
+import ImageData as img_data
+import ImageStitchingData as imgs_data
+import Stitcher as stitcher
 
 def GetImage(index, folder_path):
      # List all files in the folder, sorted by name
@@ -42,7 +45,6 @@ def plot_rectangle(corners, color, label):
     corners = np.vstack([corners, corners[0]])
     # print(corners)
     plt.plot(corners[:, 0], corners[:, 1], color=color, label=label, linewidth=2)
-
 
 def GetSearchArea(Frame, ScaleFactor=2):
     """
@@ -84,7 +86,6 @@ def GetSearchArea(Frame, ScaleFactor=2):
 
     return new_corners
 
-   
 
 if __name__ == '__main__':
 
@@ -92,6 +93,7 @@ if __name__ == '__main__':
     # overall_translation = np.eye(3)
 
     cumulative_transform = np.eye(3)
+
 
     #start timer
     start = time.time()
@@ -103,12 +105,15 @@ if __name__ == '__main__':
     imgs_path = sys.argv[1]
     range_imgs = int(sys.argv[2])
 
+    image_storage = imgs_data.ImageStitchingData()
     first_img = GetImage(0, imgs_path)
+    image_storage.add_image(first_img, overall_transform_matrix=np.eye(3), homography_matrix=np.eye(3))
 
     #copy first image to main canvas
     main_canvas = first_img
 
-    first_img_gray = cv.cvtColor(first_img, cv.COLOR_BGR2GRAY)
+    # first_img_gray = cv.cvtColor(first_img, cv.COLOR_BGR2GRAY)
+    first_img_gray = image_storage.images_data[0].gray_image
 
     sift = cv.SIFT_create()
 
@@ -176,7 +181,6 @@ if __name__ == '__main__':
             print("No homography found")
             print("Iteration: ", i+1)
             continue
-        # H, _ = cv.findHomography(src_pts, dst_pts, cv.RANSAC, 3.0)
 
         if np.linalg.det(H) == 0:
             print("Homography is singular")
@@ -184,6 +188,8 @@ if __name__ == '__main__':
             continue
 
         H_inv = np.linalg.inv(H)
+
+        # image_storage.add_image(additional_img, homography_matrix=H_inv, overall_transform_matrix=cumulative_transform)
 
         h_add, w_add = additional_img.shape[:2]
         h_main, w_main = main_canvas.shape[:2]
@@ -207,26 +213,27 @@ if __name__ == '__main__':
         out_width = x_max - x_min
         out_height = y_max - y_min
 
-        # warped_additional = cv.warpPerspective(additional_img, translation_matrix @ H_inv, (out_width, out_height))
-        warped_additional = cv.warpPerspective(additional_img, cumulative_transform @ H_inv, (out_width, out_height))
+        image_storage.add_image(additional_img, homography_matrix=H_inv, overall_transform_matrix=cumulative_transform)
 
-        translated_main_canvas = cv.warpPerspective(main_canvas, translation_matrix, (out_width, out_height))
+        # # warped_additional = cv.warpPerspective(additional_img, translation_matrix @ H_inv, (out_width, out_height))
+        # warped_additional = cv.warpPerspective(additional_img, cumulative_transform @ H_inv, (out_width, out_height))
+        # translated_main_canvas = cv.warpPerspective(main_canvas, translation_matrix, (out_width, out_height))
 
-        mask_additional = (warped_additional > 0).astype(np.uint8)
-        # mask_main_canvas = (translated_main_canvas > 0).astype(np.uint8)
-        mask_main_canvas = 1 - mask_additional
+        # mask_additional = (warped_additional > 0).astype(np.uint8)
+        # # mask_main_canvas = (translated_main_canvas > 0).astype(np.uint8)
+        # mask_main_canvas = 1 - mask_additional
 
 
-        combined_mask = mask_additional + mask_main_canvas
-        combined_mask[combined_mask == 0] = 1
+        # combined_mask = mask_additional + mask_main_canvas
+        # combined_mask[combined_mask == 0] = 1
 
-        # blended_img = (warped_additional + translated_main_canvas) / combined_mask
-        # blended = ((translated_main_canvas.astype(np.float32) + warped_additional.astype(np.float32)) / combined_mask).astype(np.uint8)
+        # # blended_img = (warped_additional + translated_main_canvas) / combined_mask
+        # # blended = ((translated_main_canvas.astype(np.float32) + warped_additional.astype(np.float32)) / combined_mask).astype(np.uint8)
+        # # overlapped = (translated_main_canvas * mask_main_canvas) + (warped_additional * mask_additional)
+        # blended = (translated_main_canvas * mask_main_canvas) + (warped_additional * mask_additional)
+
+
         # overlapped = (translated_main_canvas * mask_main_canvas) + (warped_additional * mask_additional)
-        blended = (translated_main_canvas * mask_main_canvas) + (warped_additional * mask_additional)
-
-
-        overlapped = (translated_main_canvas * mask_main_canvas) + (warped_additional * mask_additional)
 
 
         # cv.imwrite(f'out/blended/golf/blended_img_test_{i}.png', blended)
@@ -302,32 +309,17 @@ if __name__ == '__main__':
 
         # main_canvas = new_main_canvas
         print("Iteration: ", i+1)
-        main_canvas = blended
+        # main_canvas = blended
 
-        ################### DRAW MATCHES ###################
 
-        # inlier_matches = [good_matches[i] for i in range(len(good_matches)) if mask[i]]
+    Sticher = stitcher.Stitcher(image_storage)
+    final_image = Sticher.stitch_images()
 
-        # inlier_matches_for_draw = [[m] for m in inlier_matches]
-
-        # matches_img = cv.drawMatchesKnn(
-        #     first_img_gray, keypoints1, 
-        #     additional_img_gray, keypoints2, 
-        #     inlier_matches_for_draw, None, 
-        #     # **draw_params
-        #     flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS
-        # )
-
-        # # save image
-        # cv.imwrite(f'matches_{i}.png', matches_img)
-
-        ################### DRAW MATCHES ###################
-
-        # cv.imshow('Matches', matches_img)
-        # cv.waitKey(0)
 
     # cv.imwrite(f'out/blended/golf/blended_img_cnt{range_imgs+1}.png', main_canvas)
-    cv.imwrite(f'out/blended/highway/blended_img_cnt{range_imgs+1}.png', main_canvas)
+
+    cv.imwrite(f'out/blended/highway/blended_img_cnt_new_{range_imgs+1}.png', final_image)
+    # cv.imwrite(f'out/blended/highway/blended_img_cnt{range_imgs+1}.png', main_canvas)
 
     # count runtime
     end = time.time()
