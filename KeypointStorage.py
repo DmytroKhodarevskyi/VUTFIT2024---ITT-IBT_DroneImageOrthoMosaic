@@ -12,12 +12,23 @@ class KeypointStorage:
         Parameters:
         - threshold: Distance threshold to consider a keypoint as an existing one (for updates).
         """
+        self.new_image_polygons = []
         self.previous_boxes = []
         self.search_areas = []
+
         self.keypoints_coords = []       # List to store coordinates for KDTree
         self.keypoints_data = {}         # Dictionary to store keypoints data
         self.kdtree = None               # KDTree for fast spatial lookup
         self.threshold = threshold       # Distance threshold for matching existing keypoints
+
+    def add_new_image_polygon(self, new_image_polygon):
+        """
+        Adds a new image polygon to the storage.
+        
+        Parameters:
+        - new_image_polygon: List of 4 coordinates (each a tuple of x, y) representing the corners of the new image.
+        """
+        self.new_image_polygons.append(new_image_polygon)
 
     def add_previous_box(self, previous_box):
         """
@@ -129,8 +140,8 @@ class KeypointStorage:
             kp_coords = kp_data["coords"]
             kp_reliability = kp_data["reliability"]
 
-            if kp_reliability <= 0.3:
-                continue
+            # if kp_reliability <= 0.3:
+            #     continue
 
             point = Point(kp_coords)
             if polygon.contains(point):
@@ -188,12 +199,28 @@ class KeypointStorage:
             # cv.circle(canvas, (int(x+offset_x), int(y+offset_y)), int(dot_size*reliability), color, -1)
             cv.circle(canvas, (int(x+offset_x), int(y+offset_y)), dot_size, color, -1)
         
-        for search_area in self.search_areas:
-            for i in range(4):
-                cv.line(canvas, (int(search_area[i][0]+offset_x), int(search_area[i][1]+offset_y)), (int(search_area[(i+1)%4][0]+offset_x), int(search_area[(i+1)%4][1]+offset_y)), (255, 255, 255), 2)
+        # for search_area in self.search_areas:
+        #     for i in range(4):
+        #         cv.line(canvas, (int(search_area[i][0]+offset_x), int(search_area[i][1]+offset_y)), (int(search_area[(i+1)%4][0]+offset_x), int(search_area[(i+1)%4][1]+offset_y)), (255, 255, 255), 2)
 
-        for previous_box in self.previous_boxes:
-            for i in range(4):
-                cv.line(canvas, (int(previous_box[i][0]+offset_x), int(previous_box[i][1]+offset_y)), (int(previous_box[(i+1)%4][0]+offset_x), int(previous_box[(i+1)%4][1]+offset_y)), (0, 255, 0), 2)
+        # for previous_box in self.previous_boxes:
+        #     for i in range(4):
+        #         cv.line(canvas, (int(previous_box[i][0]+offset_x), int(previous_box[i][1]+offset_y)), (int(previous_box[(i+1)%4][0]+offset_x), int(previous_box[(i+1)%4][1]+offset_y)), (0, 255, 0), 2)
+
+        # for new_image_polygon in self.new_image_polygons:
+        #     for i in range(4):
+        #         cv.line(canvas, (int(new_image_polygon[i][0]+offset_x), int(new_image_polygon[i][1]+offset_y)), (int(new_image_polygon[(i+1)%4][0]+offset_x), int(new_image_polygon[(i+1)%4][1]+offset_y)), (0, 0, 255), 2)
+
+        search_area = self.search_areas[-1]
+        for i in range(4):
+            cv.line(canvas, (int(search_area[i][0]+offset_x), int(search_area[i][1]+offset_y)), (int(search_area[(i+1)%4][0]+offset_x), int(search_area[(i+1)%4][1]+offset_y)), (255, 255, 255), 2)
+
+        previous_box = self.previous_boxes[-1]
+        for i in range(4):
+            cv.line(canvas, (int(previous_box[i][0]+offset_x), int(previous_box[i][1]+offset_y)), (int(previous_box[(i+1)%4][0]+offset_x), int(previous_box[(i+1)%4][1]+offset_y)), (0, 255, 0), 2)
+
+        new_image_polygon = self.new_image_polygons[-1]
+        for i in range(4):
+            cv.line(canvas, (int(new_image_polygon[i][0]+offset_x), int(new_image_polygon[i][1]+offset_y)), (int(new_image_polygon[(i+1)%4][0]+offset_x), int(new_image_polygon[(i+1)%4][1]+offset_y)), (0, 0, 255), 2)
 
         return canvas

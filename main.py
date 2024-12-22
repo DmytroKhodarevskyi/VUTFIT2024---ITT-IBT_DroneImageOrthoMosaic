@@ -70,16 +70,16 @@ def GetSearchArea(Frame, ScaleFactor=2):
 
     new_corners = center + scaled_vectors
 
-    plt.figure(figsize=(10, 10))
-    plt.plot(center[0], center[1], 'ro', label='Center')
-    plot_rectangle(corners, 'b', 'Original Frame')
-    plot_rectangle(new_corners, 'g', 'Search Area')
+    # plt.figure(figsize=(10, 10))
+    # plt.plot(center[0], center[1], 'ro', label='Center')
+    # plot_rectangle(corners, 'b', 'Original Frame')
+    # plot_rectangle(new_corners, 'g', 'Search Area')
 
-    plt.xlabel('X')
-    plt.ylabel('Y')
-    plt.grid(True)
-    plt.legend()
-    plt.title('Search Area for the Next Image')
+    # plt.xlabel('X')
+    # plt.ylabel('Y')
+    # plt.grid(True)
+    # plt.legend()
+    # plt.title('Search Area for the Next Image')
     
     # plt.savefig('search_area.png')
     # plt.show()
@@ -146,7 +146,8 @@ if __name__ == '__main__':
         # test_rotation = previous_box @ rotation_matrix
         # SearchArea = GetSearchArea(test_rotation, ScaleFactor=2)
         kp_storage.add_previous_box(previous_box)
-        SearchArea = GetSearchArea(previous_box, ScaleFactor=1.2)
+        # SearchArea = GetSearchArea(previous_box, ScaleFactor=1.05)
+        SearchArea = GetSearchArea(previous_box, ScaleFactor=1.5)
         keypoints1, descriptors1 = kp_storage.query_keypoints(SearchArea)
 
         #convert to numpy array
@@ -255,8 +256,18 @@ if __name__ == '__main__':
         for match in good_matches:
             kp_data = keypoints1[match.queryIdx]
 
-            # kp_coords = np.array(keypoints1[match.queryIdx].pt)
+            # kp_coords = np.array([[kp_data["coords"]]], dtype=np.float32)
+            # transformed_coords = cv.perspectiveTransform(np.array([kp_coords]).reshape(-1, 1, 2), H_inv)
             
+            # kpoint = cv.KeyPoint(
+            #     x=transformed_coords[0][0][0], 
+            #     y=transformed_coords[0][0][1], 
+            #     size=kp_data["scale"],
+            #     angle=kp_data["angle"],
+            #     response=kp_data["response"],
+            #     octave=kp_data["octave"]
+            # )
+
             kpoint = cv.KeyPoint(x=kp_data["coords"][0], 
                                  y=kp_data["coords"][1], 
                                  size=kp_data["scale"],
@@ -273,13 +284,14 @@ if __name__ == '__main__':
 
         ############ update realability by 0.7 to points that are not matched, but lying within the search area and new image area ########
 
-        print("Search Area: ", SearchArea)
+        # print("Search Area: ", SearchArea)
         search_area_polygon = Polygon(SearchArea.reshape(-1, 2))
 
         kp_storage.add_search_area(SearchArea)
         # new_image_bounding_box = cv.boundingRect(warped_corners_img2)
         # new_image_polygon = Polygon(warped_corners_img2.reshape(-1, 2))
         new_image_polygon = Polygon(transformed_corners_add.reshape(-1, 2))
+        kp_storage.add_new_image_polygon(transformed_corners_add.reshape(-1, 2))
 
         not_matched_keypoints = []
         not_matched_descriptors = []
@@ -287,24 +299,40 @@ if __name__ == '__main__':
         new_keypoints = []
         new_descriptors = []
         for kp, ds in zip(keypoints2, descriptors2):
-            if not search_area_polygon.contains(Point(kp.pt)) or not new_image_polygon.contains(Point(kp.pt)):
-                not_matched_keypoints.append(kp)
+
+            kp_coords = np.array([kp.pt], dtype=np.float32).reshape(-1, 1, 2)
+            transformed_coords = cv.perspectiveTransform(kp_coords, H_inv)
+            transformed_point = Point(transformed_coords[0][0][0], transformed_coords[0][0][1])
+
+            new_kp = cv.KeyPoint(x=transformed_coords[0][0][0], 
+                                 y=transformed_coords[0][0][1], 
+                                 size=kp.size,
+                                 angle=kp.angle,
+                                 response=kp.response,
+                                 octave=kp.octave)
+
+            # if not search_area_polygon.contains(Point(kp.pt)) or not new_image_polygon.contains(Point(kp.pt)):
+            if not search_area_polygon.contains(transformed_point) or not new_image_polygon.contains(transformed_point):
+                not_matched_keypoints.append(new_kp)
                 not_matched_descriptors.append(ds)
             else:
-                new_keypoints.append(kp)
+                new_keypoints.append(new_kp)
                 new_descriptors.append(ds)
 
         kp_storage.add_or_update_keypoints(not_matched_keypoints, not_matched_descriptors, color=color, reliability_multiplier=0.7, iteration=i+1)
 
-        keypoints2_coords = np.array([kp.pt for kp in new_keypoints], dtype=np.float32).reshape(-1, 1, 2)
+        # keypoints2_coords = np.array([kp.pt for kp in new_keypoints], dtype=np.float32).reshape(-1, 1, 2)
 
-        keypoints2_coords_transformed = cv.perspectiveTransform(keypoints2_coords, H_inv)
+        # keypoints2_coords_transformed = cv.perspectiveTransform(keypoints2_coords, H_inv)
 
-        if keypoints2_coords_transformed is None:
-            print("ERROR: keypoints2_coords_transformed is None, cannot add to storage")
-        else:
-            keypoints2_transformed = [cv.KeyPoint(x=pt[0][0], y=pt[0][1], size=1) for pt in keypoints2_coords_transformed]
-            kp_storage.add_or_update_keypoints(keypoints2_transformed, new_descriptors, color=color, iteration=i+1)
+        # if keypoints2_coords_transformed is None:
+        #     print("ERROR: keypoints2_coords_transformed is None, cannot add to storage")
+        # else:
+        #     keypoints2_transformed = [cv.KeyPoint(x=pt[0][0], y=pt[0][1], size=1) for pt in keypoints2_coords_transformed]
+        #     kp_storage.add_or_update_keypoints(keypoints2_transformed, new_descriptors, color=color, iteration=i+1)
+
+        kp_storage.add_or_update_keypoints(new_keypoints, new_descriptors, color=color, iteration=i+1)
+        
         
         # keypoints2_transformed = [cv.KeyPoint(x=pt[0][0], y=pt[0][1], size=1) for pt in keypoints2_coords_transformed]
         # if keypoints2_transformed is None:
@@ -325,14 +353,13 @@ if __name__ == '__main__':
 
     Sticher = stitcher.Stitcher(image_storage)
     # final_image = Sticher.stitch_images()
-    final_image = Sticher.stitch_images(blending=True)
-    # final_image = Sticher.stitch_images(gradient=True)
+    # final_image = Sticher.stitch_images(blending=True)
+    final_image = Sticher.stitch_images(gradient=True)
 
 
-    # cv.imwrite(f'out/blended/golf/blended_img_cnt{range_imgs+1}.png', main_canvas)
+    # cv.imwrite(f'out/blended/golf/blended_img_cnt{range_imgs+1}.png', final_image)
 
     cv.imwrite(f'out/blended/highway/blended_img_cnt_new_{range_imgs+1}.png', final_image)
-    # cv.imwrite(f'out/blended/highway/blended_img_cnt{range_imgs+1}.png', main_canvas)
 
     # count runtime
     end = time.time()
