@@ -12,10 +12,30 @@ class KeypointStorage:
         Parameters:
         - threshold: Distance threshold to consider a keypoint as an existing one (for updates).
         """
+        self.previous_boxes = []
+        self.search_areas = []
         self.keypoints_coords = []       # List to store coordinates for KDTree
         self.keypoints_data = {}         # Dictionary to store keypoints data
         self.kdtree = None               # KDTree for fast spatial lookup
         self.threshold = threshold       # Distance threshold for matching existing keypoints
+
+    def add_previous_box(self, previous_box):
+        """
+        Adds a previous box to the storage.
+        
+        Parameters:
+        - previous_box: List of 4 coordinates (each a tuple of x, y) representing the corners of the previous box.
+        """
+        self.previous_boxes.append(previous_box)
+
+    def add_search_area(self, search_area):
+        """
+        Adds a search area to the storage.
+        
+        Parameters:
+        - search_area: List of 4 coordinates (each a tuple of x, y) representing the corners of the search area.
+        """
+        self.search_areas.append(search_area)
 
     def _build_kdtree(self):
         """Rebuilds the k-d tree after adding new keypoints."""
@@ -168,4 +188,12 @@ class KeypointStorage:
             # cv.circle(canvas, (int(x+offset_x), int(y+offset_y)), int(dot_size*reliability), color, -1)
             cv.circle(canvas, (int(x+offset_x), int(y+offset_y)), dot_size, color, -1)
         
+        for search_area in self.search_areas:
+            for i in range(4):
+                cv.line(canvas, (int(search_area[i][0]+offset_x), int(search_area[i][1]+offset_y)), (int(search_area[(i+1)%4][0]+offset_x), int(search_area[(i+1)%4][1]+offset_y)), (255, 255, 255), 2)
+
+        for previous_box in self.previous_boxes:
+            for i in range(4):
+                cv.line(canvas, (int(previous_box[i][0]+offset_x), int(previous_box[i][1]+offset_y)), (int(previous_box[(i+1)%4][0]+offset_x), int(previous_box[(i+1)%4][1]+offset_y)), (0, 255, 0), 2)
+
         return canvas

@@ -3,42 +3,6 @@ import cv2
 import numpy as np
 
 class Stitcher:
-    # def __init__(self, data=None):
-    #     """
-    #     Initializes a Stitcher object.
-        
-    #     :param data: Optional. An existing ImageStitchingData object to set. If None, a new instance is created.
-    #     """
-    #     if data is not None:
-    #         self.data = data
-    #     else:
-    #         self.data = ImageStitchingData()
-
-    # def set_data(self, data):
-    #     """
-    #     Sets the ImageStitchingData object.
-
-    #     :param data: The ImageStitchingData object to set.
-    #     """
-    #     self.data = data
-
-    # def stitch_images(self):
-    #     final = data.images_data[0].get_image()
-
-    #     for i in range(1, len(data.images_data)):
-    #         additional = data.images_data[i].get_image()
-
-    #         h_main, w_main = final.shape[:2]
-    #         h_add, w_add = additional_img.shape[:2]
-        
-    #         corners_main = np.array([[0, 0], [w_main, 0], [w_main, h_main], [0, h_main]], dtype=np.float32).reshape(-1, 1, 2)
-
-    #         corners_add = np.array([[0, 0], [w_add, 0], [w_add, h_add], [0, h_add]], dtype=np.float32).reshape(-1, 1, 2)
-
-    #         transformed_corners = cv2.perspectiveTransform(corners_add, data.images_data[i].get_homography_matrix())
-
-    #         warped_additional = cv2.warpPerspective(additional, data.images_data[i].get_homography_matrix(), (first.shape[1] + additional.shape[1], first.shape[0]))
-
     def __init__(self, stitching_data):
         """
         Initializes a Stitcher object.
@@ -47,7 +11,58 @@ class Stitcher:
         """
         self.stitching_data = stitching_data
 
-    def stitch_images(self):
+    def gradient_blend(self, image1, image2, mask1, mask2):
+        """
+        Blend two images using gradient masks for smooth transitions.
+        
+        :param image1: First image (numpy array).
+        :param image2: Second image (numpy array).
+        :param mask1: Gradient mask for the first image.
+        :param mask2: Gradient mask for the second image.
+        :return: A blended image.
+        """
+        # Ensure masks are normalized to the range [0, 1]
+        if mask1.max() > 1: mask1 = mask1.astype(np.float32) / 255.0
+        if mask2.max() > 1: mask2 = mask2.astype(np.float32) / 255.0
+
+        # Ensure masks have the same spatial dimensions as the images
+        if len(image1.shape) == 3 and len(mask1.shape) == 2:
+            mask1 = np.repeat(mask1[:, :, np.newaxis], image1.shape[2], axis=2)
+        if len(image2.shape) == 3 and len(mask2.shape) == 2:
+            mask2 = np.repeat(mask2[:, :, np.newaxis], image2.shape[2], axis=2)
+
+        # Combine masks to ensure they sum to 1 in overlapping areas
+        combined_mask = mask1 + mask2
+        combined_mask[combined_mask == 0] = 1  # Avoid division by zero
+
+        # Blend the images using the masks
+        blended_image = (image1.astype(np.float32) * mask1 +
+                        image2.astype(np.float32) * mask2) / combined_mask
+
+        return blended_image.astype(np.uint8)
+
+    def create_gradient_mask(self, image):
+        """
+        Create a gradient mask for blending that increases weights towards the center of the image content.
+        
+        :param image: Input image (numpy array). Non-zero areas define the mask region.
+        :return: A gradient mask (float32) with values between 0 and 1.
+        """
+        # Create a binary mask (non-zero pixels are set to 1)
+        binary_mask = (image > 0).astype(np.uint8)
+
+        if binary_mask.ndim == 3:  # If the image has multiple channels
+            binary_mask = cv2.cvtColor(binary_mask, cv2.COLOR_BGR2GRAY)
+
+        # Compute the distance transform
+        distance_transform = cv2.distanceTransform(binary_mask, distanceType=cv2.DIST_L2, maskSize=5)
+
+        # Normalize to the range [0, 1]
+        gradient_mask = cv2.normalize(distance_transform, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
+
+        return gradient_mask
+
+    def stitch_images(self, blending=False, gradient=False):
         """
         Warps all images by their corresponding homography matrices and combines them into one final image.
 
@@ -96,13 +111,41 @@ class Stitcher:
             
             # mask = (warped_image > 0).astype(np.uint8)
 
-            mask_additional = (warped_image > 0).astype(np.uint8)
-            # mask_main = (final_image > 0).astype(np.uint8)
-            mask_main = 1 - mask_additional
+            if blending:
+                # Create masks for the additional and main images
+                mask_additional = (warped_image > 0).astype(np.float32)
+                # mask_main = 1 - mask_additional
+                mask_main = (final_image > 0).astype(np.float32)
 
-            final_image = (final_image * mask_main) + (warped_image * mask_additional)
+                # Calculate combined weights for blending
+                combined_mask = mask_additional + mask_main
+                combined_mask[combined_mask == 0] = 1  # Avoid division by zero
+
+                final_image = ((final_image.astype(np.float32) + warped_image.astype(np.float32)) / combined_mask).astype(np.uint8)
+
+
+                # Perform 50-50 blending on overlapping regions
+                # final_image = ((final_image.astype(np.float32) * 0.5 +
+                                # warped_image.astype(np.float32) * 0.5) / combined_mask).astype(np.uint8)
+                # final_image = (final_image * mask_main) + (warped_image * mask_additional)
+            elif gradient:
+                # mask_additional = (warped_image > 0).astype(np.uint8)
+                mask_additional = self.create_gradient_mask(warped_image)
+                # mask_main = (final_image > 0).astype(np.uint8)
+                mask_main = self.create_gradient_mask(final_image)
+
+                # final_image = self.feather_blend(final_image, warped_image, mask_main, mask_additional)
+                final_image = self.gradient_blend(final_image, warped_image, mask_main, mask_additional)
+            else:
+                mask_additional = (warped_image > 0).astype(np.uint8)
+                # mask_main = (final_image > 0).astype(np.uint8)
+                mask_main = 1 - mask_additional
+
+                final_image = (final_image * mask_main) + (warped_image * mask_additional)
             # mask = cv2.cvtColor((warped_image > 0).astype(np.uint8) * 255, cv2.COLOR_BGR2GRAY)
 
             # final_image = cv2.add(final_image, warped_image, mask=mask)
 
         return final_image
+
+   

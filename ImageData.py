@@ -2,7 +2,8 @@ import numpy as np
 import cv2 as cv2
 
 class ImageData:
-    def __init__(self, image, homography_matrix=None, overall_transform_matrix=None):
+    # def __init__(self, image, homography_matrix=None, overall_transform_matrix=None):
+    def __init__(self, image, homography_matrix=None):
         """
         Initializes an ImageData object.
 
@@ -13,7 +14,7 @@ class ImageData:
         self.image = image
         self.gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         self.homography_matrix = homography_matrix if homography_matrix is not None else np.eye(3)
-        self.overall_transform_matrix = overall_transform_matrix if overall_transform_matrix is not None else np.eye(3)
+        # self.overall_transform_matrix = overall_transform_matrix if overall_transform_matrix is not None else np.eye(3)
 
     def set_homography_matrix(self, matrix):
         """

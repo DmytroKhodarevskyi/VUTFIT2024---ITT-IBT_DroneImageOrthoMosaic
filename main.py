@@ -89,11 +89,7 @@ def GetSearchArea(Frame, ScaleFactor=2):
 
 if __name__ == '__main__':
 
-    # cumulative_H = np.eye(3)
-    # overall_translation = np.eye(3)
-
-    cumulative_transform = np.eye(3)
-
+    # cumulative_transform = np.eye(3)
 
     #start timer
     start = time.time()
@@ -107,7 +103,8 @@ if __name__ == '__main__':
 
     image_storage = imgs_data.ImageStitchingData()
     first_img = GetImage(0, imgs_path)
-    image_storage.add_image(first_img, overall_transform_matrix=np.eye(3), homography_matrix=np.eye(3))
+    # image_storage.add_image(first_img, overall_transform_matrix=np.eye(3), homography_matrix=np.eye(3))
+    image_storage.add_image(first_img, homography_matrix=np.eye(3))
 
     #copy first image to main canvas
     main_canvas = first_img
@@ -148,8 +145,8 @@ if __name__ == '__main__':
         # test_box = [[0, 0], [240, 56], [320, 240], [0, 320]]
         # test_rotation = previous_box @ rotation_matrix
         # SearchArea = GetSearchArea(test_rotation, ScaleFactor=2)
-        
-        SearchArea = GetSearchArea(previous_box, ScaleFactor=2)
+        kp_storage.add_previous_box(previous_box)
+        SearchArea = GetSearchArea(previous_box, ScaleFactor=1.2)
         keypoints1, descriptors1 = kp_storage.query_keypoints(SearchArea)
 
         #convert to numpy array
@@ -191,29 +188,30 @@ if __name__ == '__main__':
 
         # image_storage.add_image(additional_img, homography_matrix=H_inv, overall_transform_matrix=cumulative_transform)
 
-        h_add, w_add = additional_img.shape[:2]
-        h_main, w_main = main_canvas.shape[:2]
+        # h_add, w_add = additional_img.shape[:2]
+        # h_main, w_main = main_canvas.shape[:2]
         
-        corners_add = np.array([[0, 0], [w_add, 0], [w_add, h_add], [0, h_add]], dtype=np.float32).reshape(-1, 1, 2)
-        corners_main = np.array([[0, 0], [w_main, 0], [w_main, h_main], [0, h_main]], dtype=np.float32).reshape(-1, 1, 2)
+        # corners_add = np.array([[0, 0], [w_add, 0], [w_add, h_add], [0, h_add]], dtype=np.float32).reshape(-1, 1, 2)
+        # corners_main = np.array([[0, 0], [w_main, 0], [w_main, h_main], [0, h_main]], dtype=np.float32).reshape(-1, 1, 2)
         
-        # transformed_corners_add = cv.perspectiveTransform(corners_add, H_inv)
-        transformed_corners_add = cv.perspectiveTransform(corners_add, cumulative_transform @ H_inv)
-        all_corners = np.concatenate((corners_main, transformed_corners_add), axis=0)
+        # # transformed_corners_add = cv.perspectiveTransform(corners_add, H_inv)
+        # transformed_corners_add = cv.perspectiveTransform(corners_add, cumulative_transform @ H_inv)
+        # all_corners = np.concatenate((corners_main, transformed_corners_add), axis=0)
 
-        [x_min, y_min] = np.int32(all_corners.min(axis=0).ravel() - 0.5)
-        [x_max, y_max] = np.int32(all_corners.max(axis=0).ravel() + 0.5)
+        # [x_min, y_min] = np.int32(all_corners.min(axis=0).ravel() - 0.5)
+        # [x_max, y_max] = np.int32(all_corners.max(axis=0).ravel() + 0.5)
 
-        translation_matrix = np.array([[1, 0, -x_min],
-                                    [0, 1, -y_min],
-                                    [0, 0, 1]], dtype=np.float32)
+        # translation_matrix = np.array([[1, 0, -x_min],
+        #                             [0, 1, -y_min],
+        #                             [0, 0, 1]], dtype=np.float32)
 
-        cumulative_transform = translation_matrix @ cumulative_transform
+        # cumulative_transform = translation_matrix @ cumulative_transform
 
-        out_width = x_max - x_min
-        out_height = y_max - y_min
+        # out_width = x_max - x_min
+        # out_height = y_max - y_min
 
-        image_storage.add_image(additional_img, homography_matrix=H_inv, overall_transform_matrix=cumulative_transform)
+        # image_storage.add_image(additional_img, homography_matrix=H_inv, overall_transform_matrix=cumulative_transform)
+        image_storage.add_image(additional_img, homography_matrix=H_inv)
 
         # # warped_additional = cv.warpPerspective(additional_img, translation_matrix @ H_inv, (out_width, out_height))
         # warped_additional = cv.warpPerspective(additional_img, cumulative_transform @ H_inv, (out_width, out_height))
@@ -239,13 +237,26 @@ if __name__ == '__main__':
         # cv.imwrite(f'out/blended/golf/blended_img_test_{i}.png', blended)
 
         # previous_box = warped_corners_img2.reshape(-1, 2)
+        new_image_corners = np.array([
+            [0, 0],
+            [additional_img.shape[1], 0],
+            [additional_img.shape[1], additional_img.shape[0]],
+            [0, additional_img.shape[0]]
+        ], dtype=np.float32).reshape(-1, 1, 2)
+
+        transformed_corners_add = cv.perspectiveTransform(new_image_corners, H_inv)
+
         previous_box = transformed_corners_add.reshape(-1, 2)
+
 
         ################### ADD KEYPOINTS TO STORAGE ###################
         matched_keypoints = []
         matched_descriptors = []
         for match in good_matches:
             kp_data = keypoints1[match.queryIdx]
+
+            # kp_coords = np.array(keypoints1[match.queryIdx].pt)
+            
             kpoint = cv.KeyPoint(x=kp_data["coords"][0], 
                                  y=kp_data["coords"][1], 
                                  size=kp_data["scale"],
@@ -262,7 +273,10 @@ if __name__ == '__main__':
 
         ############ update realability by 0.7 to points that are not matched, but lying within the search area and new image area ########
 
+        print("Search Area: ", SearchArea)
         search_area_polygon = Polygon(SearchArea.reshape(-1, 2))
+
+        kp_storage.add_search_area(SearchArea)
         # new_image_bounding_box = cv.boundingRect(warped_corners_img2)
         # new_image_polygon = Polygon(warped_corners_img2.reshape(-1, 2))
         new_image_polygon = Polygon(transformed_corners_add.reshape(-1, 2))
@@ -305,15 +319,14 @@ if __name__ == '__main__':
         visualisation = kp_storage.visualize_keypoints()
         # cv.imwrite(f'out/keypoints/golf/keypoints_storage_{i}.png', visualisation)
         cv.imwrite(f'out/keypoints/highway/keypoints_storage_{i}.png', visualisation)
-        # print("PREVIOUS BOX: ", previous_box)
 
-        # main_canvas = new_main_canvas
         print("Iteration: ", i+1)
-        # main_canvas = blended
 
 
     Sticher = stitcher.Stitcher(image_storage)
-    final_image = Sticher.stitch_images()
+    # final_image = Sticher.stitch_images()
+    final_image = Sticher.stitch_images(blending=True)
+    # final_image = Sticher.stitch_images(gradient=True)
 
 
     # cv.imwrite(f'out/blended/golf/blended_img_cnt{range_imgs+1}.png', main_canvas)
