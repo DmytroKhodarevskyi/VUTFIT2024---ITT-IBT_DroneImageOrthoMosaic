@@ -345,21 +345,22 @@ if __name__ == '__main__':
 
 
         visualisation = kp_storage.visualize_keypoints()
-        # cv.imwrite(f'out/keypoints/golf/keypoints_storage_{i}.png', visualisation)
-        cv.imwrite(f'out/keypoints/highway/keypoints_storage_{i}.png', visualisation)
+        cv.imwrite(f'out/keypoints/golf/keypoints_storage_{i}.png', visualisation)
+        # cv.imwrite(f'out/keypoints/highway/keypoints_storage_{i}.png', visualisation)
 
         print("Iteration: ", i+1)
 
 
     Sticher = stitcher.Stitcher(image_storage)
-    # final_image = Sticher.stitch_images()
+    final_image = Sticher.stitch_images()
     # final_image = Sticher.stitch_images(blending=True)
-    final_image = Sticher.stitch_images(gradient=True)
+    # final_image = Sticher.stitch_images(gradient=True)
 
 
-    # cv.imwrite(f'out/blended/golf/blended_img_cnt{range_imgs+1}.png', final_image)
+    cv.imwrite(f'out/blended/golf/blended_img_cnt{range_imgs+1}.png', final_image)
 
-    cv.imwrite(f'out/blended/highway/blended_img_cnt_new_{range_imgs+1}.png', final_image)
+    # cv.imwrite(f'out/blended/highway/blended_img_cnt_new_grad_{range_imgs+1}.png', final_image)
+    # cv.imwrite(f'out/blended/highway/blended_img_cnt_new_{range_imgs+1}.png', final_image)
 
     # count runtime
     end = time.time()
