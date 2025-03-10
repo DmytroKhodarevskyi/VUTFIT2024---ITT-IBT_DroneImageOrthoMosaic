@@ -13,6 +13,8 @@ import ImageData as img_data
 import ImageStitchingData as imgs_data
 import Stitcher as stitcher
 
+HOMOGRAPHIES_PATH = "./homographies"
+
 def GetImage(index, folder_path):
      # List all files in the folder, sorted by name
     files = sorted(f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg')))
@@ -27,8 +29,9 @@ def GetImage(index, folder_path):
     # Open the image
     # image = Image.open(image_path)
     image = cv.imread(image_path)
+    image_name = files[index]
     
-    return image
+    return image, image_name
 
 def plot_rectangle(corners, color, label):
     """
@@ -86,6 +89,8 @@ def GetSearchArea(Frame, ScaleFactor=2):
 
     return new_corners
 
+def print_usage():
+    print("Usage: python main.py <imgs_path> <range_imgs> <image_data_path> [-h]")
 
 if __name__ == '__main__':
 
@@ -94,17 +99,30 @@ if __name__ == '__main__':
     #start timer
     start = time.time()
 
-    if len(sys.argv) < 3:
-        print("Usage: python main.py <imgs_path> <range_imgs>")
+    if len(sys.argv) < 4:
+        print_usage()
         sys.exit(1)
 
     imgs_path = sys.argv[1]
     range_imgs = int(sys.argv[2])
+    HOMOGRAPHIES_PATH = sys.argv[3]
+
+    print("Homographies path: ", HOMOGRAPHIES_PATH)
+
+    use_homographies = False
+
+    if len(sys.argv) > 4:
+        if sys.argv[4] == "-h":
+            use_homographies = True
+        else:
+            print_usage()
+            sys.exit(1)
 
     image_storage = imgs_data.ImageStitchingData()
-    first_img = GetImage(0, imgs_path)
+    first_img, image_name = GetImage(0, imgs_path)
+    # print("Image name: ", image_name)
     # image_storage.add_image(first_img, overall_transform_matrix=np.eye(3), homography_matrix=np.eye(3))
-    image_storage.add_image(first_img, homography_matrix=np.eye(3))
+    image_storage.add_image(first_img, image_name, homography_matrix=np.eye(3))
 
     #copy first image to main canvas
     main_canvas = first_img
@@ -128,227 +146,248 @@ if __name__ == '__main__':
         [first_img.shape[1], 0]
     ]
 
-    for i in range(range_imgs):
+    try:
+        for i in range(range_imgs):
 
-        color = random.choice(range(256)), random.choice(range(256)), random.choice(range(256))
+            color = random.choice(range(256)), random.choice(range(256)), random.choice(range(256))
 
-        additional_img = GetImage(i+1, imgs_path)
+            additional_img, image_name = GetImage(i+1, imgs_path)
 
-        additional_img_gray = cv.cvtColor(additional_img, cv.COLOR_BGR2GRAY)
+            H = np.eye(3)
+            good_matches = []
+            keypoints2 = []
+            descriptors2 = []
 
-        keypoints2, descriptors2 = sift.detectAndCompute(additional_img_gray, None)
+            # homography_data = image_storage.load_homography_data(HOMOGRAPHIES_PATH, image_name)
+            image_data = image_storage.load_image_data(image_name, HOMOGRAPHIES_PATH)
 
-        # rotation_matrix = np.array([
-        #     [np.cos(np.pi/4), -np.sin(np.pi/4)],
-        #     [np.sin(np.pi/4), np.cos(np.pi/4)]
-        #     ])
-        # test_box = [[0, 0], [240, 56], [320, 240], [0, 320]]
-        # test_rotation = previous_box @ rotation_matrix
-        # SearchArea = GetSearchArea(test_rotation, ScaleFactor=2)
-        kp_storage.add_previous_box(previous_box)
-        # SearchArea = GetSearchArea(previous_box, ScaleFactor=1.05)
-        SearchArea = GetSearchArea(previous_box, ScaleFactor=1.5)
-        keypoints1, descriptors1 = kp_storage.query_keypoints(SearchArea)
+            if image_data is not None:
+                H, good_matches, keypoints2, descriptors2 = image_data
 
-        #convert to numpy array
-        keypoints1 = np.array(keypoints1)
-        descriptors1 = np.array(descriptors1)
+            # if use_homographies and homography_data is not None:
+            # print(use_homographies)
+            # print(image_data)
 
-        matcher = cv.DescriptorMatcher_create(cv.DescriptorMatcher_FLANNBASED)
-        matches = matcher.knnMatch(descriptors1, descriptors2, k=2)
+            kp_storage.add_previous_box(previous_box)
+            # SearchArea = GetSearchArea(previous_box, ScaleFactor=1.05)
+            SearchArea = GetSearchArea(previous_box, ScaleFactor=1.5)
+            keypoints1, descriptors1 = kp_storage.query_keypoints(SearchArea)
 
-        good_matches = []
-        for m, n in matches:
-            if m.distance < 0.75 * n.distance:
-                good_matches.append(m)
+            #convert to numpy array
+            keypoints1 = np.array(keypoints1)
+            descriptors1 = np.array(descriptors1)
 
-        keypoints1_coords = np.array([kp["coords"] for kp in keypoints1])
-        keypoints1_descriptors = np.array([kp["descriptor"] for kp in keypoints1])
+            keypoints1_coords = np.array([kp["coords"] for kp in keypoints1])
+            keypoints1_descriptors = np.array([kp["descriptor"] for kp in keypoints1])
 
-        src_pts = np.float32([keypoints1_coords[m.queryIdx] for m in good_matches]).reshape(-1, 1, 2)
-        dst_pts = np.float32([keypoints2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+            if use_homographies and image_data is not None:
+                image_storage.add_image(additional_img, image_name, homography_matrix=H)
+                # print("Data found for ", image_name)
 
-        H, status = cv.findHomography(src_pts, dst_pts, cv.RANSAC, 5.0)
-
-        if np.sum(status) == 0:
-            print("No inliers found in RANSAC")
-            print("Iteration: ", i+1)
-            continue
-
-        if np.all(H == 0):
-            print("No homography found")
-            print("Iteration: ", i+1)
-            continue
-
-        if np.linalg.det(H) == 0:
-            print("Homography is singular")
-            print("Iteration: ", i+1)
-            continue
-
-        H_inv = np.linalg.inv(H)
-
-        # image_storage.add_image(additional_img, homography_matrix=H_inv, overall_transform_matrix=cumulative_transform)
-
-        # h_add, w_add = additional_img.shape[:2]
-        # h_main, w_main = main_canvas.shape[:2]
-        
-        # corners_add = np.array([[0, 0], [w_add, 0], [w_add, h_add], [0, h_add]], dtype=np.float32).reshape(-1, 1, 2)
-        # corners_main = np.array([[0, 0], [w_main, 0], [w_main, h_main], [0, h_main]], dtype=np.float32).reshape(-1, 1, 2)
-        
-        # # transformed_corners_add = cv.perspectiveTransform(corners_add, H_inv)
-        # transformed_corners_add = cv.perspectiveTransform(corners_add, cumulative_transform @ H_inv)
-        # all_corners = np.concatenate((corners_main, transformed_corners_add), axis=0)
-
-        # [x_min, y_min] = np.int32(all_corners.min(axis=0).ravel() - 0.5)
-        # [x_max, y_max] = np.int32(all_corners.max(axis=0).ravel() + 0.5)
-
-        # translation_matrix = np.array([[1, 0, -x_min],
-        #                             [0, 1, -y_min],
-        #                             [0, 0, 1]], dtype=np.float32)
-
-        # cumulative_transform = translation_matrix @ cumulative_transform
-
-        # out_width = x_max - x_min
-        # out_height = y_max - y_min
-
-        # image_storage.add_image(additional_img, homography_matrix=H_inv, overall_transform_matrix=cumulative_transform)
-        image_storage.add_image(additional_img, homography_matrix=H_inv)
-
-        # # warped_additional = cv.warpPerspective(additional_img, translation_matrix @ H_inv, (out_width, out_height))
-        # warped_additional = cv.warpPerspective(additional_img, cumulative_transform @ H_inv, (out_width, out_height))
-        # translated_main_canvas = cv.warpPerspective(main_canvas, translation_matrix, (out_width, out_height))
-
-        # mask_additional = (warped_additional > 0).astype(np.uint8)
-        # # mask_main_canvas = (translated_main_canvas > 0).astype(np.uint8)
-        # mask_main_canvas = 1 - mask_additional
+                # for match in good_matches[:5]:  # Print first 5 matches after loading
+                #     print(f"After loading - QueryIdx: {match.queryIdx}, TrainIdx: {match.trainIdx}, ImgIdx: {match.imgIdx}, Distance: {match.distance}")
 
 
-        # combined_mask = mask_additional + mask_main_canvas
-        # combined_mask[combined_mask == 0] = 1
-
-        # # blended_img = (warped_additional + translated_main_canvas) / combined_mask
-        # # blended = ((translated_main_canvas.astype(np.float32) + warped_additional.astype(np.float32)) / combined_mask).astype(np.uint8)
-        # # overlapped = (translated_main_canvas * mask_main_canvas) + (warped_additional * mask_additional)
-        # blended = (translated_main_canvas * mask_main_canvas) + (warped_additional * mask_additional)
-
-
-        # overlapped = (translated_main_canvas * mask_main_canvas) + (warped_additional * mask_additional)
-
-
-        # cv.imwrite(f'out/blended/golf/blended_img_test_{i}.png', blended)
-
-        # previous_box = warped_corners_img2.reshape(-1, 2)
-        new_image_corners = np.array([
-            [0, 0],
-            [additional_img.shape[1], 0],
-            [additional_img.shape[1], additional_img.shape[0]],
-            [0, additional_img.shape[0]]
-        ], dtype=np.float32).reshape(-1, 1, 2)
-
-        transformed_corners_add = cv.perspectiveTransform(new_image_corners, H_inv)
-
-        previous_box = transformed_corners_add.reshape(-1, 2)
-
-
-        ################### ADD KEYPOINTS TO STORAGE ###################
-        matched_keypoints = []
-        matched_descriptors = []
-        for match in good_matches:
-            kp_data = keypoints1[match.queryIdx]
-
-            # kp_coords = np.array([[kp_data["coords"]]], dtype=np.float32)
-            # transformed_coords = cv.perspectiveTransform(np.array([kp_coords]).reshape(-1, 1, 2), H_inv)
-            
-            # kpoint = cv.KeyPoint(
-            #     x=transformed_coords[0][0][0], 
-            #     y=transformed_coords[0][0][1], 
-            #     size=kp_data["scale"],
-            #     angle=kp_data["angle"],
-            #     response=kp_data["response"],
-            #     octave=kp_data["octave"]
-            # )
-
-            kpoint = cv.KeyPoint(x=kp_data["coords"][0], 
-                                 y=kp_data["coords"][1], 
-                                 size=kp_data["scale"],
-                                 angle=kp_data["angle"],
-                                 response=kp_data["response"],
-                                 octave=kp_data["octave"])
-            
-            matched_keypoints.append(kpoint)
-
-            matched_descriptors.append(keypoints1_descriptors[match.queryIdx])
-
-        kp_storage.add_or_update_keypoints(matched_keypoints, matched_descriptors, color=color, reliability_multiplier=1.5, iteration=i+1)
-        ################### ADD KEYPOINTS TO STORAGE ###################
-
-        ############ update realability by 0.7 to points that are not matched, but lying within the search area and new image area ########
-
-        # print("Search Area: ", SearchArea)
-        search_area_polygon = Polygon(SearchArea.reshape(-1, 2))
-
-        kp_storage.add_search_area(SearchArea)
-        # new_image_bounding_box = cv.boundingRect(warped_corners_img2)
-        # new_image_polygon = Polygon(warped_corners_img2.reshape(-1, 2))
-        new_image_polygon = Polygon(transformed_corners_add.reshape(-1, 2))
-        kp_storage.add_new_image_polygon(transformed_corners_add.reshape(-1, 2))
-
-        not_matched_keypoints = []
-        not_matched_descriptors = []
-
-        new_keypoints = []
-        new_descriptors = []
-        for kp, ds in zip(keypoints2, descriptors2):
-
-            kp_coords = np.array([kp.pt], dtype=np.float32).reshape(-1, 1, 2)
-            transformed_coords = cv.perspectiveTransform(kp_coords, H_inv)
-            transformed_point = Point(transformed_coords[0][0][0], transformed_coords[0][0][1])
-
-            new_kp = cv.KeyPoint(x=transformed_coords[0][0][0], 
-                                 y=transformed_coords[0][0][1], 
-                                 size=kp.size,
-                                 angle=kp.angle,
-                                 response=kp.response,
-                                 octave=kp.octave)
-
-            # if not search_area_polygon.contains(Point(kp.pt)) or not new_image_polygon.contains(Point(kp.pt)):
-            if not search_area_polygon.contains(transformed_point) or not new_image_polygon.contains(transformed_point):
-                not_matched_keypoints.append(new_kp)
-                not_matched_descriptors.append(ds)
             else:
-                new_keypoints.append(new_kp)
-                new_descriptors.append(ds)
+                additional_img_gray = cv.cvtColor(additional_img, cv.COLOR_BGR2GRAY)
 
-        kp_storage.add_or_update_keypoints(not_matched_keypoints, not_matched_descriptors, color=color, reliability_multiplier=0.7, iteration=i+1)
+                keypoints2, descriptors2 = sift.detectAndCompute(additional_img_gray, None)
 
-        # keypoints2_coords = np.array([kp.pt for kp in new_keypoints], dtype=np.float32).reshape(-1, 1, 2)
+                # rotation_matrix = np.array([
+                #     [np.cos(np.pi/4), -np.sin(np.pi/4)],
+                #     [np.sin(np.pi/4), np.cos(np.pi/4)]
+                #     ])
+                # test_box = [[0, 0], [240, 56], [320, 240], [0, 320]]
+                # test_rotation = previous_box @ rotation_matrix
+                # SearchArea = GetSearchArea(test_rotation, ScaleFactor=2)
 
-        # keypoints2_coords_transformed = cv.perspectiveTransform(keypoints2_coords, H_inv)
+                # kp_storage.add_previous_box(previous_box)
+                # # SearchArea = GetSearchArea(previous_box, ScaleFactor=1.05)
+                # SearchArea = GetSearchArea(previous_box, ScaleFactor=1.5)
+                # keypoints1, descriptors1 = kp_storage.query_keypoints(SearchArea)
 
-        # if keypoints2_coords_transformed is None:
-        #     print("ERROR: keypoints2_coords_transformed is None, cannot add to storage")
-        # else:
-        #     keypoints2_transformed = [cv.KeyPoint(x=pt[0][0], y=pt[0][1], size=1) for pt in keypoints2_coords_transformed]
-        #     kp_storage.add_or_update_keypoints(keypoints2_transformed, new_descriptors, color=color, iteration=i+1)
+                # #convert to numpy array
+                # keypoints1 = np.array(keypoints1)
+                # descriptors1 = np.array(descriptors1)
 
-        kp_storage.add_or_update_keypoints(new_keypoints, new_descriptors, color=color, iteration=i+1)
+                matcher = cv.DescriptorMatcher_create(cv.DescriptorMatcher_FLANNBASED)
+                matches = matcher.knnMatch(descriptors1, descriptors2, k=2)
+
+                good_matches = []
+                for m, n in matches:
+                    if m.distance < 0.75 * n.distance:
+                        good_matches.append(m)
+                
+                # for match in good_matches[:5]:  # Print first 5 matches
+                #     print(f"Before saving - QueryIdx: {match.queryIdx}, TrainIdx: {match.trainIdx}, ImgIdx: {match.imgIdx}, Distance: {match.distance}")
+
+
+                # keypoints1_coords = np.array([kp["coords"] for kp in keypoints1])
+                # keypoints1_descriptors = np.array([kp["descriptor"] for kp in keypoints1])
+
+                src_pts = np.float32([keypoints1_coords[m.queryIdx] for m in good_matches]).reshape(-1, 1, 2)
+                dst_pts = np.float32([keypoints2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+
+                H_current, status = cv.findHomography(src_pts, dst_pts, cv.RANSAC, 5.0)
+
+                if np.sum(status) == 0:
+                    print("No inliers found in RANSAC")
+                    print("Iteration: ", i+1)
+                    continue
+
+                if np.all(H_current == 0):
+                    print("No homography found")
+                    print("Iteration: ", i+1)
+                    continue
+
+                if np.linalg.det(H_current) == 0:
+                    print("Homography is singular")
+                    print("Iteration: ", i+1)
+                    continue
+
+                H = np.linalg.inv(H_current)
+
+                image_storage.add_image(additional_img, image_name, homography_matrix=H)
+                image_storage.save_image_data(image_name, H, good_matches, keypoints2, descriptors2, HOMOGRAPHIES_PATH)
+
+
+            # cv.imwrite(f'out/blended/golf/blended_img_test_{i}.png', blended)
+
+            # previous_box = warped_corners_img2.reshape(-1, 2)
+            new_image_corners = np.array([
+                [0, 0],
+                [additional_img.shape[1], 0],
+                [additional_img.shape[1], additional_img.shape[0]],
+                [0, additional_img.shape[0]]
+            ], dtype=np.float32).reshape(-1, 1, 2)
+
+            transformed_corners_add = cv.perspectiveTransform(new_image_corners, H)
+
+            previous_box = transformed_corners_add.reshape(-1, 2)
+
+
+            ################### ADD KEYPOINTS TO STORAGE ###################
+            matched_keypoints = []
+            matched_descriptors = []
+            for match in good_matches:
+                kp_data = keypoints1[match.queryIdx]
+
+                # kp_coords = np.array([[kp_data["coords"]]], dtype=np.float32)
+                # transformed_coords = cv.perspectiveTransform(np.array([kp_coords]).reshape(-1, 1, 2), H_inv)
+                
+                # kpoint = cv.KeyPoint(
+                #     x=transformed_coords[0][0][0], 
+                #     y=transformed_coords[0][0][1], 
+                #     size=kp_data["scale"],
+                #     angle=kp_data["angle"],
+                #     response=kp_data["response"],
+                #     octave=kp_data["octave"]
+                # )
+
+                kpoint = cv.KeyPoint(x=kp_data["coords"][0], 
+                                    y=kp_data["coords"][1], 
+                                    size=kp_data["scale"],
+                                    angle=kp_data["angle"],
+                                    response=kp_data["response"],
+                                    octave=kp_data["octave"])
+
+                # kpoint = cv.KeyPoint(x=kp_data.pt[0], 
+                #      y=kp_data.pt[1], 
+                #      size=kp_data.size,
+                #      angle=kp_data.angle,
+                #      response=kp_data.response,
+                #      octave=kp_data.octave)
+
+                
+                matched_keypoints.append(kpoint)
+
+                matched_descriptors.append(keypoints1_descriptors[match.queryIdx])
+
+
+            kp_storage.add_or_update_keypoints(matched_keypoints, matched_descriptors, color=color, reliability_multiplier=1.5, iteration=i+1)
+
+            ################### ADD KEYPOINTS TO STORAGE ###################
+
+            ############ update realability by 0.7 to points that are not matched, but lying within the search area and new image area ########
+
+            # print("Search Area: ", SearchArea)
+            search_area_polygon = Polygon(SearchArea.reshape(-1, 2))
+
+            kp_storage.add_search_area(SearchArea)
+            # new_image_bounding_box = cv.boundingRect(warped_corners_img2)
+            # new_image_polygon = Polygon(warped_corners_img2.reshape(-1, 2))
+            new_image_polygon = Polygon(transformed_corners_add.reshape(-1, 2))
+            kp_storage.add_new_image_polygon(transformed_corners_add.reshape(-1, 2))
+
+            not_matched_keypoints = []
+            not_matched_descriptors = []
+
+            new_keypoints = []
+            new_descriptors = []
+            for kp, ds in zip(keypoints2, descriptors2):
+
+                kp_coords = np.array([kp.pt], dtype=np.float32).reshape(-1, 1, 2)
+                # transformed_coords = cv.perspectiveTransform(kp_coords, H_inv)
+                transformed_coords = cv.perspectiveTransform(kp_coords, H)
+                transformed_point = Point(transformed_coords[0][0][0], transformed_coords[0][0][1])
+
+                new_kp = cv.KeyPoint(x=transformed_coords[0][0][0], 
+                                    y=transformed_coords[0][0][1], 
+                                    size=kp.size,
+                                    angle=kp.angle,
+                                    response=kp.response,
+                                    octave=kp.octave)
+
+                # if not search_area_polygon.contains(Point(kp.pt)) or not new_image_polygon.contains(Point(kp.pt)):
+                if not search_area_polygon.contains(transformed_point) or not new_image_polygon.contains(transformed_point):
+                    not_matched_keypoints.append(new_kp)
+                    not_matched_descriptors.append(ds)
+                else:
+                    new_keypoints.append(new_kp)
+                    new_descriptors.append(ds)
+
+            kp_storage.add_or_update_keypoints(not_matched_keypoints, not_matched_descriptors, color=color, reliability_multiplier=0.7, iteration=i+1)
+
+            # keypoints2_coords = np.array([kp.pt for kp in new_keypoints], dtype=np.float32).reshape(-1, 1, 2)
+
+            # keypoints2_coords_transformed = cv.perspectiveTransform(keypoints2_coords, H_inv)
+
+            # if keypoints2_coords_transformed is None:
+            #     print("ERROR: keypoints2_coords_transformed is None, cannot add to storage")
+            # else:
+            #     keypoints2_transformed = [cv.KeyPoint(x=pt[0][0], y=pt[0][1], size=1) for pt in keypoints2_coords_transformed]
+            #     kp_storage.add_or_update_keypoints(keypoints2_transformed, new_descriptors, color=color, iteration=i+1)
+
+            kp_storage.add_or_update_keypoints(new_keypoints, new_descriptors, color=color, iteration=i+1)
+            
+            
+            # keypoints2_transformed = [cv.KeyPoint(x=pt[0][0], y=pt[0][1], size=1) for pt in keypoints2_coords_transformed]
+            # if keypoints2_transformed is None:
+            #     print("ERROR: keypoints2_transformed is None, cannot add to storage")
+            # else:
+            #     kp_storage.add_or_update_keypoints(keypoints2_transformed, new_descriptors, color=color, iteration=i+1)
+            # keypoints2_coords = np.array([kp.pt for kp in keypoints2], dtype=np.float32).reshape(-1, 1, 2)
+            # keypoints2_coords_transformed = cv.perspectiveTransform(keypoints2_coords, H_inv)
+            # keypoints2_transformed = [cv.KeyPoint(x=pt[0][0], y=pt[0][1], size=1) for pt in keypoints2_coords_transformed]
+
+
+            visualisation = kp_storage.visualize_keypoints()
+            # cv.imwrite(f'out/keypoints/golf/keypoints_storage_{i}.png', visualisation)
+            cv.imwrite(f'out/keypoints/highway/keypoints_storage_{i}.png', visualisation)
+
+            print("Iteration:", i+1)
+            print("")
+
         
-        
-        # keypoints2_transformed = [cv.KeyPoint(x=pt[0][0], y=pt[0][1], size=1) for pt in keypoints2_coords_transformed]
-        # if keypoints2_transformed is None:
-        #     print("ERROR: keypoints2_transformed is None, cannot add to storage")
-        # else:
-        #     kp_storage.add_or_update_keypoints(keypoints2_transformed, new_descriptors, color=color, iteration=i+1)
-        # keypoints2_coords = np.array([kp.pt for kp in keypoints2], dtype=np.float32).reshape(-1, 1, 2)
-        # keypoints2_coords_transformed = cv.perspectiveTransform(keypoints2_coords, H_inv)
-        # keypoints2_transformed = [cv.KeyPoint(x=pt[0][0], y=pt[0][1], size=1) for pt in keypoints2_coords_transformed]
 
+    except KeyboardInterrupt:
+        # image_storage.save_homography_data(HOMOGRAPHIES_PATH)
+        image_storage.save_image_data(image_name, H, good_matches, keypoints2, descriptors2, HOMOGRAPHIES_PATH)
+        print()
+        print("KeyboardInterrupt: Homographies saved to ", HOMOGRAPHIES_PATH)
+        exit(1)
 
-        visualisation = kp_storage.visualize_keypoints()
-        cv.imwrite(f'out/keypoints/golf/keypoints_storage_{i}.png', visualisation)
-        # cv.imwrite(f'out/keypoints/highway/keypoints_storage_{i}.png', visualisation)
-
-        print("Iteration: ", i+1)
+    # image_storage.save_homography_data(HOMOGRAPHIES_PATH)
 
 
     Sticher = stitcher.Stitcher(image_storage)
@@ -357,11 +396,12 @@ if __name__ == '__main__':
     # final_image = Sticher.stitch_images(gradient=True)
 
 
-    cv.imwrite(f'out/blended/golf/blended_img_cnt{range_imgs+1}.png', final_image)
+    # cv.imwrite(f'out/blended/golf/blended_img_cnt{range_imgs+1}.png', final_image)
 
     # cv.imwrite(f'out/blended/highway/blended_img_cnt_new_grad_{range_imgs+1}.png', final_image)
-    # cv.imwrite(f'out/blended/highway/blended_img_cnt_new_{range_imgs+1}.png', final_image)
+    cv.imwrite(f'out/blended/highway/blended_img_cnt_new_{range_imgs+1}.png', final_image)
 
     # count runtime
     end = time.time()
+    print()
     print("Runtime: ", end-start)
