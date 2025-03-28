@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import random
 from shapely.geometry import Point, Polygon
+from sklearn.metrics import roc_auc_score
 
 
 import KeypointStorage as kp
@@ -99,6 +100,9 @@ if __name__ == '__main__':
     #start timer
     start = time.time()
 
+    roc_auc_scores_all = []
+    average_scores = []
+
     if len(sys.argv) < 4:
         print_usage()
         sys.exit(1)
@@ -130,7 +134,8 @@ if __name__ == '__main__':
     # first_img_gray = cv.cvtColor(first_img, cv.COLOR_BGR2GRAY)
     first_img_gray = image_storage.images_data[0].gray_image
 
-    sift = cv.SIFT_create()
+    # sift = cv.SIFT_create()
+    sift = cv.SIFT_create(nOctaveLayers=5)
 
     keypoints1, descriptors1 = sift.detectAndCompute(first_img_gray, None)
 
@@ -154,6 +159,7 @@ if __name__ == '__main__':
             additional_img, image_name = GetImage(i+1, imgs_path)
 
             H = np.eye(3)
+            mask = np.zeros(first_img_gray.shape, dtype=np.uint8)
             good_matches = []
             keypoints2 = []
             descriptors2 = []
@@ -162,7 +168,7 @@ if __name__ == '__main__':
             image_data = image_storage.load_image_data(image_name, HOMOGRAPHIES_PATH)
 
             if image_data is not None:
-                H, good_matches, keypoints2, descriptors2 = image_data
+                H, mask, good_matches, keypoints2, descriptors2 = image_data
 
             # if use_homographies and homography_data is not None:
             # print(use_homographies)
@@ -215,7 +221,10 @@ if __name__ == '__main__':
 
                 good_matches = []
                 for m, n in matches:
-                    if m.distance < 0.75 * n.distance:
+                    # if m.distance < 0.75 * n.distance:
+                    # if m.distance < 0.7 * n.distance:
+                    # if m.distance < 0.73 * n.distance:
+                    if m.distance < 0.8 * n.distance:
                         good_matches.append(m)
                 
                 # for match in good_matches[:5]:  # Print first 5 matches
@@ -229,6 +238,8 @@ if __name__ == '__main__':
                 dst_pts = np.float32([keypoints2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
 
                 H_current, status = cv.findHomography(src_pts, dst_pts, cv.RANSAC, 5.0)
+                # H_current, status = cv.findHomography(src_pts, dst_pts, cv.RANSAC, 3.0)
+                # H_current, status = cv.findHomography(src_pts, dst_pts, cv.RANSAC, 4.0)
 
                 if np.sum(status) == 0:
                     print("No inliers found in RANSAC")
@@ -246,9 +257,10 @@ if __name__ == '__main__':
                     continue
 
                 H = np.linalg.inv(H_current)
+                mask = status.ravel()
 
                 image_storage.add_image(additional_img, image_name, homography_matrix=H)
-                image_storage.save_image_data(image_name, H, good_matches, keypoints2, descriptors2, HOMOGRAPHIES_PATH)
+                image_storage.save_image_data(image_name, H, status, good_matches, keypoints2, descriptors2, HOMOGRAPHIES_PATH)
 
 
             # cv.imwrite(f'out/blended/golf/blended_img_test_{i}.png', blended)
@@ -264,6 +276,22 @@ if __name__ == '__main__':
             transformed_corners_add = cv.perspectiveTransform(new_image_corners, H)
 
             previous_box = transformed_corners_add.reshape(-1, 2)
+
+            # Generate pseudo "probabilities" based on match distances
+            match_distances = [m.distance for m in good_matches]
+            normalized_distances = (np.array(match_distances) - min(match_distances)) / (max(match_distances) - min(match_distances))
+
+            # Compute AUC
+            auc_score = roc_auc_score(mask, 1 - normalized_distances)  # Higher score = better match quality
+            # print(f"AUC Score: {auc_score:.3f}")
+            roc_auc_scores_all.append(auc_score)
+
+            if len(roc_auc_scores_all) % 5 == 0:
+                average_score = np.mean(roc_auc_scores_all)
+                print(f"Average AUC Score: {average_score:.3f}")
+                average_scores.append(round(average_score, 3))
+
+
 
 
             ################### ADD KEYPOINTS TO STORAGE ###################
@@ -372,8 +400,8 @@ if __name__ == '__main__':
 
 
             visualisation = kp_storage.visualize_keypoints()
-            # cv.imwrite(f'out/keypoints/golf/keypoints_storage_{i}.png', visualisation)
-            cv.imwrite(f'out/keypoints/highway/keypoints_storage_{i}.png', visualisation)
+            cv.imwrite(f'out/keypoints/golf/keypoints_storage_{i}.png', visualisation)
+            # cv.imwrite(f'out/keypoints/highway/keypoints_storage_{i}.png', visualisation)
 
             print("Iteration:", i+1)
             print("")
@@ -382,26 +410,26 @@ if __name__ == '__main__':
 
     except KeyboardInterrupt:
         # image_storage.save_homography_data(HOMOGRAPHIES_PATH)
-        image_storage.save_image_data(image_name, H, good_matches, keypoints2, descriptors2, HOMOGRAPHIES_PATH)
+        image_storage.save_image_data(image_name, H, mask, good_matches, keypoints2, descriptors2, HOMOGRAPHIES_PATH)
         print()
         print("KeyboardInterrupt: Homographies saved to ", HOMOGRAPHIES_PATH)
         exit(1)
-
-    # image_storage.save_homography_data(HOMOGRAPHIES_PATH)
-
 
     Sticher = stitcher.Stitcher(image_storage)
     final_image = Sticher.stitch_images()
     # final_image = Sticher.stitch_images(blending=True)
     # final_image = Sticher.stitch_images(gradient=True)
 
+    cv.imwrite(f'out/blended/golf/blended_img_cnt{range_imgs+1}.png', final_image)
 
-    # cv.imwrite(f'out/blended/golf/blended_img_cnt{range_imgs+1}.png', final_image)
-
-    # cv.imwrite(f'out/blended/highway/blended_img_cnt_new_grad_{range_imgs+1}.png', final_image)
-    cv.imwrite(f'out/blended/highway/blended_img_cnt_new_{range_imgs+1}.png', final_image)
+    # cv.imwrite(f'out/blended/highway/blended_img_cnt_new_{range_imgs+1}.png', final_image)
 
     # count runtime
     end = time.time()
     print()
     print("Runtime: ", end-start)
+
+    # average_score = np.mean(roc_auc_scores_all)
+    # print(f"Average AUC Score: {average_score:.3f}")
+
+    print("Average AUC Scores: ", average_scores)

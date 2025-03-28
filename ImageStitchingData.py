@@ -127,11 +127,14 @@ class ImageStitchingData:
 
         return data
 
-    def save_image_data(self, image_name, H, good_matches, keypoints2, descriptors2, save_path):
+    def save_image_data(self, image_name, H, mask, good_matches, keypoints2, descriptors2, save_path):
         os.makedirs(save_path, exist_ok=True)  # Ensure directory exists
 
         # Save homography as plain text
         np.savetxt(os.path.join(save_path, f"{image_name}_homography.txt"), H)
+
+        #save mask as binary
+        np.save(os.path.join(save_path, f"{image_name}_mask.npy"), mask)
 
         # Convert good_matches (cv2.DMatch objects) into dictionaries
         good_matches_data = [{"queryIdx": m.queryIdx, "trainIdx": m.trainIdx, "imgIdx": m.imgIdx, "distance": m.distance} for m in good_matches]
@@ -157,6 +160,9 @@ class ImageStitchingData:
             # Load homography from text file
             H = np.loadtxt(os.path.join(load_path, f"{image_name}_homography.txt"))
 
+            # Load mask from binary file
+            mask = np.load(os.path.join(load_path, f"{image_name}_mask.npy"))
+
             # Load matches and keypoints from JSON
             with open(os.path.join(load_path, f"{image_name}_good_matches.json"), "r") as f:
                 good_matches_data = json.load(f)
@@ -173,7 +179,7 @@ class ImageStitchingData:
             # Load descriptors from binary file
             descriptors2 = np.load(os.path.join(load_path, f"{image_name}_descriptors2.npy"))
 
-            return H, good_matches, keypoints2, descriptors2
+            return H, mask, good_matches, keypoints2, descriptors2
 
         except FileNotFoundError:
             print(f"⚠️  Missing saved data for {image_name}. Recomputing...")

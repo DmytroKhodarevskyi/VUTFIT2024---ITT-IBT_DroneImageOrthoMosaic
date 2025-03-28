@@ -478,3 +478,6 @@ TSWLatexianTemp*
 /masks/
 
 /homographies/
+
+/out/blended/
+/out/keypoints/
