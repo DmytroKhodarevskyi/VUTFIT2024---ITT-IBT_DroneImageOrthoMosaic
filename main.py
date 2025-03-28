@@ -8,7 +8,6 @@ import random
 from shapely.geometry import Point, Polygon
 from sklearn.metrics import roc_auc_score
 
-
 import KeypointStorage as kp
 import ImageData as img_data
 import ImageStitchingData as imgs_data
@@ -95,8 +94,6 @@ def print_usage():
 
 if __name__ == '__main__':
 
-    # cumulative_transform = np.eye(3)
-
     #start timer
     start = time.time()
 
@@ -111,8 +108,6 @@ if __name__ == '__main__':
     range_imgs = int(sys.argv[2])
     HOMOGRAPHIES_PATH = sys.argv[3]
 
-    print("Homographies path: ", HOMOGRAPHIES_PATH)
-
     use_homographies = False
 
     if len(sys.argv) > 4:
@@ -124,17 +119,13 @@ if __name__ == '__main__':
 
     image_storage = imgs_data.ImageStitchingData()
     first_img, image_name = GetImage(0, imgs_path)
-    # print("Image name: ", image_name)
-    # image_storage.add_image(first_img, overall_transform_matrix=np.eye(3), homography_matrix=np.eye(3))
     image_storage.add_image(first_img, image_name, homography_matrix=np.eye(3))
 
     #copy first image to main canvas
     main_canvas = first_img
 
-    # first_img_gray = cv.cvtColor(first_img, cv.COLOR_BGR2GRAY)
     first_img_gray = image_storage.images_data[0].gray_image
 
-    # sift = cv.SIFT_create()
     sift = cv.SIFT_create(nOctaveLayers=5)
 
     keypoints1, descriptors1 = sift.detectAndCompute(first_img_gray, None)
@@ -164,18 +155,12 @@ if __name__ == '__main__':
             keypoints2 = []
             descriptors2 = []
 
-            # homography_data = image_storage.load_homography_data(HOMOGRAPHIES_PATH, image_name)
             image_data = image_storage.load_image_data(image_name, HOMOGRAPHIES_PATH)
 
             if image_data is not None:
                 H, mask, good_matches, keypoints2, descriptors2 = image_data
 
-            # if use_homographies and homography_data is not None:
-            # print(use_homographies)
-            # print(image_data)
-
             kp_storage.add_previous_box(previous_box)
-            # SearchArea = GetSearchArea(previous_box, ScaleFactor=1.05)
             SearchArea = GetSearchArea(previous_box, ScaleFactor=1.5)
             keypoints1, descriptors1 = kp_storage.query_keypoints(SearchArea)
 
@@ -188,33 +173,12 @@ if __name__ == '__main__':
 
             if use_homographies and image_data is not None:
                 image_storage.add_image(additional_img, image_name, homography_matrix=H)
-                # print("Data found for ", image_name)
-
-                # for match in good_matches[:5]:  # Print first 5 matches after loading
-                #     print(f"After loading - QueryIdx: {match.queryIdx}, TrainIdx: {match.trainIdx}, ImgIdx: {match.imgIdx}, Distance: {match.distance}")
 
 
             else:
                 additional_img_gray = cv.cvtColor(additional_img, cv.COLOR_BGR2GRAY)
 
                 keypoints2, descriptors2 = sift.detectAndCompute(additional_img_gray, None)
-
-                # rotation_matrix = np.array([
-                #     [np.cos(np.pi/4), -np.sin(np.pi/4)],
-                #     [np.sin(np.pi/4), np.cos(np.pi/4)]
-                #     ])
-                # test_box = [[0, 0], [240, 56], [320, 240], [0, 320]]
-                # test_rotation = previous_box @ rotation_matrix
-                # SearchArea = GetSearchArea(test_rotation, ScaleFactor=2)
-
-                # kp_storage.add_previous_box(previous_box)
-                # # SearchArea = GetSearchArea(previous_box, ScaleFactor=1.05)
-                # SearchArea = GetSearchArea(previous_box, ScaleFactor=1.5)
-                # keypoints1, descriptors1 = kp_storage.query_keypoints(SearchArea)
-
-                # #convert to numpy array
-                # keypoints1 = np.array(keypoints1)
-                # descriptors1 = np.array(descriptors1)
 
                 matcher = cv.DescriptorMatcher_create(cv.DescriptorMatcher_FLANNBASED)
                 matches = matcher.knnMatch(descriptors1, descriptors2, k=2)
@@ -227,12 +191,6 @@ if __name__ == '__main__':
                     if m.distance < 0.8 * n.distance:
                         good_matches.append(m)
                 
-                # for match in good_matches[:5]:  # Print first 5 matches
-                #     print(f"Before saving - QueryIdx: {match.queryIdx}, TrainIdx: {match.trainIdx}, ImgIdx: {match.imgIdx}, Distance: {match.distance}")
-
-
-                # keypoints1_coords = np.array([kp["coords"] for kp in keypoints1])
-                # keypoints1_descriptors = np.array([kp["descriptor"] for kp in keypoints1])
 
                 src_pts = np.float32([keypoints1_coords[m.queryIdx] for m in good_matches]).reshape(-1, 1, 2)
                 dst_pts = np.float32([keypoints2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
@@ -263,9 +221,6 @@ if __name__ == '__main__':
                 image_storage.save_image_data(image_name, H, status, good_matches, keypoints2, descriptors2, HOMOGRAPHIES_PATH)
 
 
-            # cv.imwrite(f'out/blended/golf/blended_img_test_{i}.png', blended)
-
-            # previous_box = warped_corners_img2.reshape(-1, 2)
             new_image_corners = np.array([
                 [0, 0],
                 [additional_img.shape[1], 0],
@@ -292,25 +247,12 @@ if __name__ == '__main__':
                 average_scores.append(round(average_score, 3))
 
 
-
-
             ################### ADD KEYPOINTS TO STORAGE ###################
             matched_keypoints = []
             matched_descriptors = []
             for match in good_matches:
                 kp_data = keypoints1[match.queryIdx]
 
-                # kp_coords = np.array([[kp_data["coords"]]], dtype=np.float32)
-                # transformed_coords = cv.perspectiveTransform(np.array([kp_coords]).reshape(-1, 1, 2), H_inv)
-                
-                # kpoint = cv.KeyPoint(
-                #     x=transformed_coords[0][0][0], 
-                #     y=transformed_coords[0][0][1], 
-                #     size=kp_data["scale"],
-                #     angle=kp_data["angle"],
-                #     response=kp_data["response"],
-                #     octave=kp_data["octave"]
-                # )
 
                 kpoint = cv.KeyPoint(x=kp_data["coords"][0], 
                                     y=kp_data["coords"][1], 
@@ -318,13 +260,6 @@ if __name__ == '__main__':
                                     angle=kp_data["angle"],
                                     response=kp_data["response"],
                                     octave=kp_data["octave"])
-
-                # kpoint = cv.KeyPoint(x=kp_data.pt[0], 
-                #      y=kp_data.pt[1], 
-                #      size=kp_data.size,
-                #      angle=kp_data.angle,
-                #      response=kp_data.response,
-                #      octave=kp_data.octave)
 
                 
                 matched_keypoints.append(kpoint)
@@ -342,8 +277,6 @@ if __name__ == '__main__':
             search_area_polygon = Polygon(SearchArea.reshape(-1, 2))
 
             kp_storage.add_search_area(SearchArea)
-            # new_image_bounding_box = cv.boundingRect(warped_corners_img2)
-            # new_image_polygon = Polygon(warped_corners_img2.reshape(-1, 2))
             new_image_polygon = Polygon(transformed_corners_add.reshape(-1, 2))
             kp_storage.add_new_image_polygon(transformed_corners_add.reshape(-1, 2))
 
@@ -355,7 +288,6 @@ if __name__ == '__main__':
             for kp, ds in zip(keypoints2, descriptors2):
 
                 kp_coords = np.array([kp.pt], dtype=np.float32).reshape(-1, 1, 2)
-                # transformed_coords = cv.perspectiveTransform(kp_coords, H_inv)
                 transformed_coords = cv.perspectiveTransform(kp_coords, H)
                 transformed_point = Point(transformed_coords[0][0][0], transformed_coords[0][0][1])
 
@@ -366,7 +298,6 @@ if __name__ == '__main__':
                                     response=kp.response,
                                     octave=kp.octave)
 
-                # if not search_area_polygon.contains(Point(kp.pt)) or not new_image_polygon.contains(Point(kp.pt)):
                 if not search_area_polygon.contains(transformed_point) or not new_image_polygon.contains(transformed_point):
                     not_matched_keypoints.append(new_kp)
                     not_matched_descriptors.append(ds)
@@ -376,28 +307,8 @@ if __name__ == '__main__':
 
             kp_storage.add_or_update_keypoints(not_matched_keypoints, not_matched_descriptors, color=color, reliability_multiplier=0.7, iteration=i+1)
 
-            # keypoints2_coords = np.array([kp.pt for kp in new_keypoints], dtype=np.float32).reshape(-1, 1, 2)
-
-            # keypoints2_coords_transformed = cv.perspectiveTransform(keypoints2_coords, H_inv)
-
-            # if keypoints2_coords_transformed is None:
-            #     print("ERROR: keypoints2_coords_transformed is None, cannot add to storage")
-            # else:
-            #     keypoints2_transformed = [cv.KeyPoint(x=pt[0][0], y=pt[0][1], size=1) for pt in keypoints2_coords_transformed]
-            #     kp_storage.add_or_update_keypoints(keypoints2_transformed, new_descriptors, color=color, iteration=i+1)
-
             kp_storage.add_or_update_keypoints(new_keypoints, new_descriptors, color=color, iteration=i+1)
             
-            
-            # keypoints2_transformed = [cv.KeyPoint(x=pt[0][0], y=pt[0][1], size=1) for pt in keypoints2_coords_transformed]
-            # if keypoints2_transformed is None:
-            #     print("ERROR: keypoints2_transformed is None, cannot add to storage")
-            # else:
-            #     kp_storage.add_or_update_keypoints(keypoints2_transformed, new_descriptors, color=color, iteration=i+1)
-            # keypoints2_coords = np.array([kp.pt for kp in keypoints2], dtype=np.float32).reshape(-1, 1, 2)
-            # keypoints2_coords_transformed = cv.perspectiveTransform(keypoints2_coords, H_inv)
-            # keypoints2_transformed = [cv.KeyPoint(x=pt[0][0], y=pt[0][1], size=1) for pt in keypoints2_coords_transformed]
-
 
             visualisation = kp_storage.visualize_keypoints()
             cv.imwrite(f'out/keypoints/golf/keypoints_storage_{i}.png', visualisation)
@@ -409,7 +320,6 @@ if __name__ == '__main__':
         
 
     except KeyboardInterrupt:
-        # image_storage.save_homography_data(HOMOGRAPHIES_PATH)
         image_storage.save_image_data(image_name, H, mask, good_matches, keypoints2, descriptors2, HOMOGRAPHIES_PATH)
         print()
         print("KeyboardInterrupt: Homographies saved to ", HOMOGRAPHIES_PATH)
@@ -421,7 +331,6 @@ if __name__ == '__main__':
     # final_image = Sticher.stitch_images(gradient=True)
 
     cv.imwrite(f'out/blended/golf/blended_img_cnt{range_imgs+1}.png', final_image)
-
     # cv.imwrite(f'out/blended/highway/blended_img_cnt_new_{range_imgs+1}.png', final_image)
 
     # count runtime
