@@ -3,6 +3,11 @@ from scipy.spatial import KDTree
 import cv2 as cv
 from shapely.geometry import Point, Polygon
 from matplotlib import cm
+from matplotlib.colors import Normalize
+
+g_minumum = 0.3
+g_maximum = 1.5
+g_initial_reliability = 0.7
 
 class KeypointStorage:
     def __init__(self, threshold=5):
@@ -78,10 +83,12 @@ class KeypointStorage:
                         
                         reliability = self.keypoints_data[idx]["reliability"]
 
-                        minimum = 0.2
-                        maximum = 1.5
-                        normalized_reliability = min(max(reliability / maximum, minimum), 1.0)
-                        color = cm.inferno(normalized_reliability)[:3]
+                        minimum = g_minumum
+                        maximum = g_maximum
+                        norm = Normalize(vmin=minimum, vmax=maximum)
+                        normalized_reliability = norm(reliability)  # Normalize the reliability value
+                        # normalized_reliability = min(max(reliability / maximum, minimum), 1.0)
+                        color = cm.plasma(normalized_reliability)[:3]
                         color = tuple([int(c * 255) for c in color])
                         # set color intensity based on reliability
                         # current_color = self.keypoints_data[idx]["color"]
@@ -95,15 +102,17 @@ class KeypointStorage:
             if not found:
                 new_id = len(self.keypoints_coords)
                 self.keypoints_coords.append(kp_coords)
-                reliability = 0.5
-                minimum = 0.2
-                maximum = 1.5
-                normalized_reliability = min(max(reliability / maximum, minimum), 1.0)
-                color = cm.inferno(normalized_reliability)[:3]
+                reliability = g_initial_reliability 
+                minimum = g_minumum
+                maximum = g_maximum
+                # normalized_reliability = min(max(reliability / maximum, minimum), 1.0)
+                norm = Normalize(vmin=minimum, vmax=maximum)
+                normalized_reliability = norm(reliability)
+                color = cm.plasma(normalized_reliability)[:3]
                 color = tuple([int(c * 255) for c in color])
                 self.keypoints_data[new_id] = {
                     "coords": kp_coords,
-                    "reliability": 0.5,
+                    "reliability": g_initial_reliability,
                     # "descriptor": kp.descriptor if hasattr(kp, 'descriptor') else None,
                     "descriptor": descriptor,
                     "scale": kp.size,
@@ -137,11 +146,12 @@ class KeypointStorage:
         keypoints_within_rect = []
         descriptors = []
         for kp_data in self.keypoints_data.values():
-            kp_coords = kp_data["coords"]
             kp_reliability = kp_data["reliability"]
 
-            # if kp_reliability <= 0.3:
-            #     continue
+            # if kp_reliability <= g_minumum:
+                # continue
+
+            kp_coords = kp_data["coords"]
 
             point = Point(kp_coords)
             if polygon.contains(point):

@@ -3,8 +3,15 @@ from PIL import Image
 
 # Paths
 # src_folder = os.path.join("src", "DroneMapper_Golf9_May2016")
-src_folder = os.path.join("src", "Dominican_Highway")
-output_folder = os.path.join("src", "resized_photos_highway")
+
+# src_folder = os.path.join("src", "Dominican_Highway")
+# output_folder = os.path.join("src", "resized_photos_highway")
+
+# src_folder = os.path.join("src", "Valencia")
+# output_folder = os.path.join("src", "resized_photos_valencia")
+
+src_folder = os.path.join("src", "Quarry")
+output_folder = os.path.join("src", "resized_photos_quarry")
 
 # Target resolution
 target_width = 1920

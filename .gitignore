@@ -481,3 +481,11 @@ TSWLatexianTemp*
 
 /out/blended/
 /out/keypoints/
+
+parlament.*
+
+preview.*
+sift_keypoints.*
+mosaic.*
+matches.png
+docs/

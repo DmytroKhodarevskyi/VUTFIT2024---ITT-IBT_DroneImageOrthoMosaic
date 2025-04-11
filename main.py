@@ -9,9 +9,12 @@ from shapely.geometry import Point, Polygon
 from sklearn.metrics import roc_auc_score
 
 import KeypointStorage as kp
-import ImageData as img_data
+# import ImageData as img_data
 import ImageStitchingData as imgs_data
 import Stitcher as stitcher
+
+positive_multiplier = 1.7
+negative_multiplier = 0.6
 
 HOMOGRAPHIES_PATH = "./homographies"
 
@@ -267,7 +270,7 @@ if __name__ == '__main__':
                 matched_descriptors.append(keypoints1_descriptors[match.queryIdx])
 
 
-            kp_storage.add_or_update_keypoints(matched_keypoints, matched_descriptors, color=color, reliability_multiplier=1.5, iteration=i+1)
+            kp_storage.add_or_update_keypoints(matched_keypoints, matched_descriptors, color=color, reliability_multiplier=positive_multiplier, iteration=i+1)
 
             ################### ADD KEYPOINTS TO STORAGE ###################
 
@@ -305,14 +308,16 @@ if __name__ == '__main__':
                     new_keypoints.append(new_kp)
                     new_descriptors.append(ds)
 
-            kp_storage.add_or_update_keypoints(not_matched_keypoints, not_matched_descriptors, color=color, reliability_multiplier=0.7, iteration=i+1)
+            kp_storage.add_or_update_keypoints(not_matched_keypoints, not_matched_descriptors, color=color, reliability_multiplier=negative_multiplier, iteration=i+1)
 
             kp_storage.add_or_update_keypoints(new_keypoints, new_descriptors, color=color, iteration=i+1)
             
 
             visualisation = kp_storage.visualize_keypoints()
-            cv.imwrite(f'out/keypoints/golf/keypoints_storage_{i}.png', visualisation)
-            # cv.imwrite(f'out/keypoints/highway/keypoints_storage_{i}.png', visualisation)
+            # cv.imwrite(f'out/keypoints/quarry/keypoints_storage_{i}.png', visualisation)
+            # cv.imwrite(f'out/keypoints/valencia/keypoints_storage_{i}.png', visualisation)
+            # cv.imwrite(f'out/keypoints/golf/keypoints_storage_{i}.png', visualisation)
+            cv.imwrite(f'out/keypoints/highway/keypoints_storage_{i}.png', visualisation)
 
             print("Iteration:", i+1)
             print("")
@@ -330,13 +335,25 @@ if __name__ == '__main__':
     # final_image = Sticher.stitch_images(blending=True)
     # final_image = Sticher.stitch_images(gradient=True)
 
-    cv.imwrite(f'out/blended/golf/blended_img_cnt{range_imgs+1}.png', final_image)
-    # cv.imwrite(f'out/blended/highway/blended_img_cnt_new_{range_imgs+1}.png', final_image)
+    # cv.imwrite(f'out/blended/golf/blended_img_cnt{range_imgs+1}.png', final_image)
+    # cv.imwrite(f'out/blended/quarry/blended_img_cnt{range_imgs+1}.png', final_image)
+    # cv.imwrite(f'out/blended/valencia/blended_img_cnt{range_imgs+1}.png', final_image)
+    # cv.imwrite(f'out/blended/highway/blended_img_cnt_new_optimisation_{range_imgs+1}.png', final_image)
+    cv.imwrite(f'out/blended/highway/blended_img_cnt_new_{range_imgs+1}.png', final_image)
 
     # count runtime
     end = time.time()
-    print()
-    print("Runtime: ", end-start)
+    result_time = end-start
+
+    if result_time > 60:
+        minutes = result_time // 60
+        seconds = result_time % 60
+
+        print()
+        print(f"Runtime: {int(minutes)} minutes and {int(seconds)} seconds")
+    else:
+        print()
+        print("Runtime: ", result_time, "seconds")
 
     # average_score = np.mean(roc_auc_scores_all)
     # print(f"Average AUC Score: {average_score:.3f}")
