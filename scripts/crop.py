@@ -2,8 +2,10 @@ import rasterio
 import numpy as np
 from rasterio.enums import Resampling
 
+image = "blended_img_cnt41.png"
+
 # Open the large TIFF image
-with rasterio.open("mosaic.tif") as src:
+with rasterio.open(image) as src:
     scale_factor = 10  # Adjust as needed
     new_height = src.height // scale_factor
     new_width = src.width // scale_factor
@@ -21,4 +23,4 @@ with rasterio.open("mosaic.tif") as src:
 
     # Save as a smaller preview
     from PIL import Image
-    Image.fromarray(preview).convert("RGB").save("preview.jpg")
+    Image.fromarray(preview).convert("RGB").save("compressed_quarry.png")

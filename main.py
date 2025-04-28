@@ -52,7 +52,7 @@ def plot_rectangle(corners, color, label):
     # print(corners)
     plt.plot(corners[:, 0], corners[:, 1], color=color, label=label, linewidth=2)
 
-def GetSearchArea(Frame, ScaleFactor=2):
+def GetSearchArea(Frame, ScaleFactor=1.5):
     """
     Get the search area for the next image based on the frame of the previous image.
     
@@ -92,8 +92,100 @@ def GetSearchArea(Frame, ScaleFactor=2):
 
     return new_corners
 
+# def print_usage():
+#     print("Usage: python main.py <imgs_path> <range_imgs> <image_data_path> [-h]")
+
 def print_usage():
-    print("Usage: python main.py <imgs_path> <range_imgs> <image_data_path> [-h]")
+    print("Usage: python main.py <imgs_path> <range_imgs> <result_path> [-s <image_data_path>] [-h <image_data_path>] [-m <kp_map_path>] [-b <1-3>]")
+    print("")
+    print("Arguments:")
+    print("  imgs_path        Folder where images are stored.")
+    print("  range_imgs       Integer number of images to process.")
+    print("  result_path      Folder to save the resulting stitched image.")
+    print("Optional:")
+    print("  -s <path>        Save metadata for images to <path> (cannot combine with -h).")
+    print("  -h <path>        Load metadata for images from <path> (cannot combine with -s).")
+    print("  -m <path>        Save keypoint maps to <path>.")
+    print("  -b <1|2|3>       Blending mode (default is 1 if not specified).")
+    print("")
+    print("Notes:")
+    print("  - Either -s or -h must be used, but not both.")
+    print("  - -m and -b are optional.")
+    print("  - In -b, 1 is for blending with overlap, 2 is for 50/50 mixing, and 3 is for gradient blending.")
+
+def parse_arguments():
+    if len(sys.argv) < 4:
+        print_usage()
+        sys.exit(1)
+
+    imgs_path = sys.argv[1]
+    try:
+        range_imgs = int(sys.argv[2])
+    except ValueError:
+        print("[ERROR] range_imgs must be an integer.")
+        print_usage()
+        sys.exit(1)
+    result_path = sys.argv[3]
+
+    # Default options
+    save_metadata = False
+    use_metadata = False
+    image_data_path = None
+    save_kp_map = False
+    kp_map_path = None
+
+    blending_mode = 1  # Default blending mode
+
+    i = 4
+    while i < len(sys.argv):
+        if sys.argv[i] == "-s":
+            if i + 1 >= len(sys.argv):
+                print("[ERROR] -s requires a <image_data_path> argument.")
+                print_usage()
+                sys.exit(1)
+            save_metadata = True
+            image_data_path = sys.argv[i + 1]
+            i += 2
+        elif sys.argv[i] == "-h":
+            if i + 1 >= len(sys.argv):
+                print("[ERROR] -h requires a <image_data_path> argument.")
+                print_usage()
+                sys.exit(1)
+            use_metadata = True
+            image_data_path = sys.argv[i + 1]
+            i += 2
+        elif sys.argv[i] == "-m":
+            if i + 1 >= len(sys.argv):
+                print("[ERROR] -m requires a <kp_map_path> argument.")
+                print_usage()
+                sys.exit(1)
+            save_kp_map = True
+            kp_map_path = sys.argv[i + 1]
+            i += 2
+        elif sys.argv[i] == "-b":
+            if i + 1 >= len(sys.argv):
+                print("Error: -b requires a number 1-3.")
+                sys.exit(1)
+            try:
+                blending_mode = int(sys.argv[i + 1])
+                if blending_mode not in (1, 2, 3):
+                    print("Error: blending mode must be 1, 2, or 3.")
+                    sys.exit(1)
+            except ValueError:
+                print("Error: blending mode must be an integer 1-3.")
+                sys.exit(1)
+            i += 2
+        else:
+            print(f"[ERROR] Unknown argument: {sys.argv[i]}")
+            print_usage()
+            sys.exit(1)
+
+    # Check for conflict: cannot save and load at the same time
+    if save_metadata and use_metadata:
+        print("[ERROR] Cannot use both -s and -h at the same time.")
+        sys.exit(1)
+
+    return imgs_path, range_imgs, result_path, save_metadata, use_metadata, image_data_path, save_kp_map, kp_map_path, blending_mode
 
 if __name__ == '__main__':
 
@@ -103,22 +195,26 @@ if __name__ == '__main__':
     roc_auc_scores_all = []
     average_scores = []
 
-    if len(sys.argv) < 4:
-        print_usage()
-        sys.exit(1)
+    # if len(sys.argv) < 4:
+    #     print_usage()
+    #     sys.exit(1)
 
-    imgs_path = sys.argv[1]
-    range_imgs = int(sys.argv[2])
-    HOMOGRAPHIES_PATH = sys.argv[3]
+    # imgs_path = sys.argv[1]
+    # range_imgs = int(sys.argv[2])
+    # HOMOGRAPHIES_PATH = sys.argv[3]
 
-    use_homographies = False
+    # use_homographies = False
 
-    if len(sys.argv) > 4:
-        if sys.argv[4] == "-h":
-            use_homographies = True
-        else:
-            print_usage()
-            sys.exit(1)
+    # if len(sys.argv) > 4:
+    #     if sys.argv[4] == "-h":
+    #         use_homographies = True
+    #     else:
+    #         print_usage()
+    #         sys.exit(1)
+
+    (imgs_path, range_imgs, result_path,
+     save_metadata, use_homographies, HOMOGRAPHIES_PATH,
+      save_kp_map, kp_map_path, blending_mode) = parse_arguments()
 
     image_storage = imgs_data.ImageStitchingData()
     first_img, image_name = GetImage(0, imgs_path)
@@ -158,7 +254,10 @@ if __name__ == '__main__':
             keypoints2 = []
             descriptors2 = []
 
-            image_data = image_storage.load_image_data(image_name, HOMOGRAPHIES_PATH)
+            image_data = None
+
+            if use_homographies:
+                image_data = image_storage.load_image_data(image_name, HOMOGRAPHIES_PATH)
 
             if image_data is not None:
                 H, mask, good_matches, keypoints2, descriptors2 = image_data
@@ -221,7 +320,9 @@ if __name__ == '__main__':
                 mask = status.ravel()
 
                 image_storage.add_image(additional_img, image_name, homography_matrix=H)
-                image_storage.save_image_data(image_name, H, status, good_matches, keypoints2, descriptors2, HOMOGRAPHIES_PATH)
+                if save_metadata:
+                    # Save the image data to the specified path
+                    image_storage.save_image_data(image_name, H, status, good_matches, keypoints2, descriptors2, HOMOGRAPHIES_PATH)
 
 
             new_image_corners = np.array([
@@ -314,10 +415,17 @@ if __name__ == '__main__':
             
 
             visualisation = kp_storage.visualize_keypoints()
+
+            if save_kp_map:
+                print("Saving keypoint map to: ", kp_map_path)
+                if not os.path.exists(kp_map_path):
+                    os.makedirs(kp_map_path)
+                cv.imwrite(os.path.join(kp_map_path, f'keypoints_storage_{i}.png'), visualisation)
+
             # cv.imwrite(f'out/keypoints/quarry/keypoints_storage_{i}.png', visualisation)
             # cv.imwrite(f'out/keypoints/valencia/keypoints_storage_{i}.png', visualisation)
             # cv.imwrite(f'out/keypoints/golf/keypoints_storage_{i}.png', visualisation)
-            cv.imwrite(f'out/keypoints/highway/keypoints_storage_{i}.png', visualisation)
+            # cv.imwrite(f'out/keypoints/highway/keypoints_storage_{i}.png', visualisation)
 
             print("Iteration:", i+1)
             print("")
@@ -325,21 +433,37 @@ if __name__ == '__main__':
         
 
     except KeyboardInterrupt:
-        image_storage.save_image_data(image_name, H, mask, good_matches, keypoints2, descriptors2, HOMOGRAPHIES_PATH)
-        print()
-        print("KeyboardInterrupt: Homographies saved to ", HOMOGRAPHIES_PATH)
-        exit(1)
+        if save_metadata:
+            image_storage.save_image_data(image_name, H, mask, good_matches, keypoints2, descriptors2, HOMOGRAPHIES_PATH)
+            print()
+            print("KeyboardInterrupt: Homographies saved to ", HOMOGRAPHIES_PATH)
+            exit(1)
 
     Sticher = stitcher.Stitcher(image_storage)
-    final_image = Sticher.stitch_images()
+    final_image = None
+    if blending_mode == 1:
+        print("Blending with overlap")
+        final_image = Sticher.stitch_images()
+    elif blending_mode == 2:
+        print("Blending with 50/50 mixing")
+        final_image = Sticher.stitch_images(blending=True)
+    elif blending_mode == 3:
+        print("Blending with gradient")
+        final_image = Sticher.stitch_images(gradient=True)
+    else:
+        print("Error: Invalid blending mode. Must be 1, 2, or 3.")
+        sys.exit(1)
     # final_image = Sticher.stitch_images(blending=True)
     # final_image = Sticher.stitch_images(gradient=True)
+
+    cv.imwrite(os.path.join(result_path, f'blended_img_cnt{range_imgs+1}.png'), final_image)
+    print("Final image saved to: ", os.path.join(result_path, f'blended_img_cnt{range_imgs+1}.png'))
 
     # cv.imwrite(f'out/blended/golf/blended_img_cnt{range_imgs+1}.png', final_image)
     # cv.imwrite(f'out/blended/quarry/blended_img_cnt{range_imgs+1}.png', final_image)
     # cv.imwrite(f'out/blended/valencia/blended_img_cnt{range_imgs+1}.png', final_image)
     # cv.imwrite(f'out/blended/highway/blended_img_cnt_new_optimisation_{range_imgs+1}.png', final_image)
-    cv.imwrite(f'out/blended/highway/blended_img_cnt_new_{range_imgs+1}.png', final_image)
+    # cv.imwrite(f'out/blended/highway/blended_img_cnt_new_{range_imgs+1}.png', final_image)
 
     # count runtime
     end = time.time()
@@ -353,7 +477,7 @@ if __name__ == '__main__':
         print(f"Runtime: {int(minutes)} minutes and {int(seconds)} seconds")
     else:
         print()
-        print("Runtime: ", result_time, "seconds")
+        print("Runtime: ", round(result_time, 3) , "seconds")
 
     # average_score = np.mean(roc_auc_scores_all)
     # print(f"Average AUC Score: {average_score:.3f}")

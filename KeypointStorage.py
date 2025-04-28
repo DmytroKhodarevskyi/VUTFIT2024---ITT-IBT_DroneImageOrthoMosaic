@@ -66,7 +66,11 @@ class KeypointStorage:
         
         Parameters:
         - new_keypoints: List of new keypoints (e.g., list of cv2.KeyPoint objects).
-        - new_reliabilities: List of reliability values corresponding to each new keypoint.
+        - new_descriptors: List of descriptors corresponding to each new keypoint.
+        - iteration: Current iteration number (used for tracking).
+        - reliability_multiplier: Multiplier for the reliability value of existing keypoints.
+        - color: Color of the keypoints in BGR format (default is white).
+        - thickness: Thickness of the keypoints (default is 2).
         """
         for kp, descriptor in zip(new_keypoints, new_descriptors):
         # for kp in new_keypoints:
@@ -77,7 +81,7 @@ class KeypointStorage:
             if self.kdtree:
                 indices = self.kdtree.query_ball_point(kp_coords, self.threshold)
                 for idx in indices:
-                    # If a keypoint at similar coordinates is found, update its reliability
+                    # If a keypoint at similar coordinates is found, update its reliability instead of adding a new one
                     if np.linalg.norm(np.array(kp_coords) - np.array(self.keypoints_coords[idx])) < self.threshold:
                         self.keypoints_data[idx]["reliability"] *= reliability_multiplier
                         
@@ -126,7 +130,7 @@ class KeypointStorage:
         # Step 3: Rebuild the k-d tree to include new keypoints
         self._build_kdtree()
 
-    def query_keypoints(self, rect_points):
+    def query_keypoints(self, rect_points) -> list:
         """
         Retrieve keypoints within a rectangle defined by four points.
         
@@ -148,8 +152,8 @@ class KeypointStorage:
         for kp_data in self.keypoints_data.values():
             kp_reliability = kp_data["reliability"]
 
-            # if kp_reliability <= g_minumum:
-                # continue
+            if kp_reliability <= g_minumum:
+                continue
 
             kp_coords = kp_data["coords"]
 
@@ -160,7 +164,7 @@ class KeypointStorage:
 
         return keypoints_within_rect, descriptors
 
-    def get_all_keypoints(self):
+    def get_all_keypoints(self) -> list:
         """
         Retrieve all stored keypoints.
         

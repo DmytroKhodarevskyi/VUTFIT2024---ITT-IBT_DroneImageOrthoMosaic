@@ -481,6 +481,7 @@ TSWLatexianTemp*
 
 /out/blended/
 /out/keypoints/
+/out/
 
 parlament.*
 
@@ -489,3 +490,4 @@ sift_keypoints.*
 mosaic.*
 matches.png
 docs/
+scripts/*.png
