@@ -73,7 +73,6 @@ class KeypointStorage:
         - thickness: Thickness of the keypoints (default is 2).
         """
         for kp, descriptor in zip(new_keypoints, new_descriptors):
-        # for kp in new_keypoints:
             kp_coords = kp.pt  # Get the (x, y) coordinates of the keypoint
             found = False
             
@@ -91,12 +90,8 @@ class KeypointStorage:
                         maximum = g_maximum
                         norm = Normalize(vmin=minimum, vmax=maximum)
                         normalized_reliability = norm(reliability)  # Normalize the reliability value
-                        # normalized_reliability = min(max(reliability / maximum, minimum), 1.0)
                         color = cm.plasma(normalized_reliability)[:3]
                         color = tuple([int(c * 255) for c in color])
-                        # set color intensity based on reliability
-                        # current_color = self.keypoints_data[idx]["color"]
-                        # self.keypoints_data[idx]["color"] = tuple([int(c * (self.keypoints_data[idx]["reliability"] + 0.5)) for c in current_color])
                         self.keypoints_data[idx]["color"] = color
                         
                         found = True
@@ -202,8 +197,6 @@ class KeypointStorage:
 
         canvas = np.zeros((canvas_size[1], canvas_size[0], 3), dtype=np.uint8)
 
-        # print("CANVAS SIZE: ", canvas_size)
-        
         # Draw each keypoint on the canvas
         for keypoint_data in self.keypoints_data.values():
             x, y = keypoint_data["coords"]
@@ -213,18 +206,6 @@ class KeypointStorage:
             # cv.circle(canvas, (int(x+offset_x), int(y+offset_y)), int(dot_size*reliability), color, -1)
             cv.circle(canvas, (int(x+offset_x), int(y+offset_y)), dot_size, color, -1)
         
-        # for search_area in self.search_areas:
-        #     for i in range(4):
-        #         cv.line(canvas, (int(search_area[i][0]+offset_x), int(search_area[i][1]+offset_y)), (int(search_area[(i+1)%4][0]+offset_x), int(search_area[(i+1)%4][1]+offset_y)), (255, 255, 255), 2)
-
-        # for previous_box in self.previous_boxes:
-        #     for i in range(4):
-        #         cv.line(canvas, (int(previous_box[i][0]+offset_x), int(previous_box[i][1]+offset_y)), (int(previous_box[(i+1)%4][0]+offset_x), int(previous_box[(i+1)%4][1]+offset_y)), (0, 255, 0), 2)
-
-        # for new_image_polygon in self.new_image_polygons:
-        #     for i in range(4):
-        #         cv.line(canvas, (int(new_image_polygon[i][0]+offset_x), int(new_image_polygon[i][1]+offset_y)), (int(new_image_polygon[(i+1)%4][0]+offset_x), int(new_image_polygon[(i+1)%4][1]+offset_y)), (0, 0, 255), 2)
-
         search_area = self.search_areas[-1]
         for i in range(4):
             cv.line(canvas, (int(search_area[i][0]+offset_x), int(search_area[i][1]+offset_y)), (int(search_area[(i+1)%4][0]+offset_x), int(search_area[(i+1)%4][1]+offset_y)), (255, 255, 255), 2)

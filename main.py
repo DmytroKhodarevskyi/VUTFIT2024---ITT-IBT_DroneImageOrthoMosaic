@@ -9,7 +9,6 @@ from shapely.geometry import Point, Polygon
 from sklearn.metrics import roc_auc_score
 
 import KeypointStorage as kp
-# import ImageData as img_data
 import ImageStitchingData as imgs_data
 import Stitcher as stitcher
 
@@ -76,24 +75,8 @@ def GetSearchArea(Frame, ScaleFactor=1.5):
 
     new_corners = center + scaled_vectors
 
-    # plt.figure(figsize=(10, 10))
-    # plt.plot(center[0], center[1], 'ro', label='Center')
-    # plot_rectangle(corners, 'b', 'Original Frame')
-    # plot_rectangle(new_corners, 'g', 'Search Area')
-
-    # plt.xlabel('X')
-    # plt.ylabel('Y')
-    # plt.grid(True)
-    # plt.legend()
-    # plt.title('Search Area for the Next Image')
-    
-    # plt.savefig('search_area.png')
-    # plt.show()
-
     return new_corners
 
-# def print_usage():
-#     print("Usage: python main.py <imgs_path> <range_imgs> <image_data_path> [-h]")
 
 def print_usage():
     print("Usage: python main.py <imgs_path> <range_imgs> <result_path> [-s <image_data_path>] [-h <image_data_path>] [-m <kp_map_path>] [-b <1-3>]")
@@ -195,23 +178,6 @@ if __name__ == '__main__':
     roc_auc_scores_all = []
     average_scores = []
 
-    # if len(sys.argv) < 4:
-    #     print_usage()
-    #     sys.exit(1)
-
-    # imgs_path = sys.argv[1]
-    # range_imgs = int(sys.argv[2])
-    # HOMOGRAPHIES_PATH = sys.argv[3]
-
-    # use_homographies = False
-
-    # if len(sys.argv) > 4:
-    #     if sys.argv[4] == "-h":
-    #         use_homographies = True
-    #     else:
-    #         print_usage()
-    #         sys.exit(1)
-
     (imgs_path, range_imgs, result_path,
      save_metadata, use_homographies, HOMOGRAPHIES_PATH,
       save_kp_map, kp_map_path, blending_mode) = parse_arguments()
@@ -287,9 +253,6 @@ if __name__ == '__main__':
 
                 good_matches = []
                 for m, n in matches:
-                    # if m.distance < 0.75 * n.distance:
-                    # if m.distance < 0.7 * n.distance:
-                    # if m.distance < 0.73 * n.distance:
                     if m.distance < 0.8 * n.distance:
                         good_matches.append(m)
                 
@@ -298,8 +261,6 @@ if __name__ == '__main__':
                 dst_pts = np.float32([keypoints2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
 
                 H_current, status = cv.findHomography(src_pts, dst_pts, cv.RANSAC, 5.0)
-                # H_current, status = cv.findHomography(src_pts, dst_pts, cv.RANSAC, 3.0)
-                # H_current, status = cv.findHomography(src_pts, dst_pts, cv.RANSAC, 4.0)
 
                 if np.sum(status) == 0:
                     print("No inliers found in RANSAC")
@@ -342,7 +303,6 @@ if __name__ == '__main__':
 
             # Compute AUC
             auc_score = roc_auc_score(mask, 1 - normalized_distances)  # Higher score = better match quality
-            # print(f"AUC Score: {auc_score:.3f}")
             roc_auc_scores_all.append(auc_score)
 
             if len(roc_auc_scores_all) % 5 == 0:
@@ -352,6 +312,9 @@ if __name__ == '__main__':
 
 
             ################### ADD KEYPOINTS TO STORAGE ###################
+
+            ############ update realability by positive to points that are matched ########
+
             matched_keypoints = []
             matched_descriptors = []
             for match in good_matches:
@@ -373,11 +336,9 @@ if __name__ == '__main__':
 
             kp_storage.add_or_update_keypoints(matched_keypoints, matched_descriptors, color=color, reliability_multiplier=positive_multiplier, iteration=i+1)
 
-            ################### ADD KEYPOINTS TO STORAGE ###################
 
             ############ update realability by 0.7 to points that are not matched, but lying within the search area and new image area ########
 
-            # print("Search Area: ", SearchArea)
             search_area_polygon = Polygon(SearchArea.reshape(-1, 2))
 
             kp_storage.add_search_area(SearchArea)
@@ -413,6 +374,7 @@ if __name__ == '__main__':
 
             kp_storage.add_or_update_keypoints(new_keypoints, new_descriptors, color=color, iteration=i+1)
             
+            ################### ADD KEYPOINTS TO STORAGE ###################
 
             visualisation = kp_storage.visualize_keypoints()
 
@@ -421,11 +383,6 @@ if __name__ == '__main__':
                 if not os.path.exists(kp_map_path):
                     os.makedirs(kp_map_path)
                 cv.imwrite(os.path.join(kp_map_path, f'keypoints_storage_{i}.png'), visualisation)
-
-            # cv.imwrite(f'out/keypoints/quarry/keypoints_storage_{i}.png', visualisation)
-            # cv.imwrite(f'out/keypoints/valencia/keypoints_storage_{i}.png', visualisation)
-            # cv.imwrite(f'out/keypoints/golf/keypoints_storage_{i}.png', visualisation)
-            # cv.imwrite(f'out/keypoints/highway/keypoints_storage_{i}.png', visualisation)
 
             print("Iteration:", i+1)
             print("")
@@ -453,17 +410,9 @@ if __name__ == '__main__':
     else:
         print("Error: Invalid blending mode. Must be 1, 2, or 3.")
         sys.exit(1)
-    # final_image = Sticher.stitch_images(blending=True)
-    # final_image = Sticher.stitch_images(gradient=True)
 
     cv.imwrite(os.path.join(result_path, f'blended_img_cnt{range_imgs+1}.png'), final_image)
     print("Final image saved to: ", os.path.join(result_path, f'blended_img_cnt{range_imgs+1}.png'))
-
-    # cv.imwrite(f'out/blended/golf/blended_img_cnt{range_imgs+1}.png', final_image)
-    # cv.imwrite(f'out/blended/quarry/blended_img_cnt{range_imgs+1}.png', final_image)
-    # cv.imwrite(f'out/blended/valencia/blended_img_cnt{range_imgs+1}.png', final_image)
-    # cv.imwrite(f'out/blended/highway/blended_img_cnt_new_optimisation_{range_imgs+1}.png', final_image)
-    # cv.imwrite(f'out/blended/highway/blended_img_cnt_new_{range_imgs+1}.png', final_image)
 
     # count runtime
     end = time.time()
@@ -478,8 +427,5 @@ if __name__ == '__main__':
     else:
         print()
         print("Runtime: ", round(result_time, 3) , "seconds")
-
-    # average_score = np.mean(roc_auc_scores_all)
-    # print(f"Average AUC Score: {average_score:.3f}")
 
     print("Average AUC Scores: ", average_scores)
