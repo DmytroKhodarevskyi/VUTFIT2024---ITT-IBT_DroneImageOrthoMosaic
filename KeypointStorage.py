@@ -82,10 +82,12 @@ class KeypointStorage:
                 for idx in indices:
                     # If a keypoint at similar coordinates is found, update its reliability instead of adding a new one
                     if np.linalg.norm(np.array(kp_coords) - np.array(self.keypoints_coords[idx])) < self.threshold:
-                        self.keypoints_data[idx]["reliability"] *= reliability_multiplier
-                        
-                        reliability = self.keypoints_data[idx]["reliability"]
 
+                        # Update the keypoint's reliability
+                        self.keypoints_data[idx]["reliability"] *= reliability_multiplier
+                        reliability = self.keypoints_data[idx]["reliability"]
+                        
+                        # Update the keypoint's color based on the new reliability value
                         minimum = g_minumum
                         maximum = g_maximum
                         norm = Normalize(vmin=minimum, vmax=maximum)
@@ -99,20 +101,23 @@ class KeypointStorage:
 
             # Step 2: If the keypoint is new, add it to the storage
             if not found:
+                # Create a new keypoint ID
                 new_id = len(self.keypoints_coords)
                 self.keypoints_coords.append(kp_coords)
+
+                # Compute color based on reliability
                 reliability = g_initial_reliability 
                 minimum = g_minumum
                 maximum = g_maximum
-                # normalized_reliability = min(max(reliability / maximum, minimum), 1.0)
                 norm = Normalize(vmin=minimum, vmax=maximum)
                 normalized_reliability = norm(reliability)
                 color = cm.inferno(normalized_reliability)[:3]
                 color = tuple([int(c * 255) for c in color])
+
+                # Store the new keypoint data
                 self.keypoints_data[new_id] = {
                     "coords": kp_coords,
                     "reliability": g_initial_reliability,
-                    # "descriptor": kp.descriptor if hasattr(kp, 'descriptor') else None,
                     "descriptor": descriptor,
                     "scale": kp.size,
                     "angle": kp.angle,
@@ -135,6 +140,7 @@ class KeypointStorage:
         Returns:
         - A list of keypoint data dictionaries within the specified rectangle.
         """
+        # Check if the k-d tree is built
         if not self.kdtree:
             return []
 
@@ -147,11 +153,14 @@ class KeypointStorage:
         for kp_data in self.keypoints_data.values():
             kp_reliability = kp_data["reliability"]
 
+            # Skip keypoints with low reliability
             if kp_reliability <= g_minumum:
                 continue
 
+            # Get the coordinates of the keypoint
             kp_coords = kp_data["coords"]
 
+            # Construct a point and check if it is within the polygon
             point = Point(kp_coords)
             if polygon.contains(point):
                 keypoints_within_rect.append(kp_data)
@@ -181,10 +190,11 @@ class KeypointStorage:
         - canvas: The resulting image with keypoints drawn.
         """
         # Create a blank black canvas
-
         minimum = np.min(self.keypoints_coords, axis=0)
         maximum = np.max(self.keypoints_coords, axis=0)
 
+        # Calculate the offset to center the keypoints
+        # in the canvas
         offset_x = 0
         if minimum[0] < 0:
             offset_x = -minimum[0]
@@ -195,6 +205,7 @@ class KeypointStorage:
 
         canvas_size = (maximum - minimum).astype(int)
 
+        # Initialize the canvas with zeros (black)
         canvas = np.zeros((canvas_size[1], canvas_size[0], 3), dtype=np.uint8)
 
         # Draw each keypoint on the canvas
@@ -202,10 +213,9 @@ class KeypointStorage:
             x, y = keypoint_data["coords"]
             color = keypoint_data["color"]
             reliability = keypoint_data["reliability"]
-            # if 0 <= int(x) < canvas_size[0] and 0 <= int(y) < canvas_size[1]:
-            # cv.circle(canvas, (int(x+offset_x), int(y+offset_y)), int(dot_size*reliability), color, -1)
             cv.circle(canvas, (int(x+offset_x), int(y+offset_y)), dot_size, color, -1)
         
+        # Draw the search area, previous box, and new image polygon
         search_area = self.search_areas[-1]
         for i in range(4):
             cv.line(canvas, (int(search_area[i][0]+offset_x), int(search_area[i][1]+offset_y)), (int(search_area[(i+1)%4][0]+offset_x), int(search_area[(i+1)%4][1]+offset_y)), (255, 255, 255), 2)
