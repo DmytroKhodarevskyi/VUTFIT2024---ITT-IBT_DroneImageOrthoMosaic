@@ -90,7 +90,7 @@ class KeypointStorage:
                         maximum = g_maximum
                         norm = Normalize(vmin=minimum, vmax=maximum)
                         normalized_reliability = norm(reliability)  # Normalize the reliability value
-                        color = cm.plasma(normalized_reliability)[:3]
+                        color = cm.inferno(normalized_reliability)[:3]
                         color = tuple([int(c * 255) for c in color])
                         self.keypoints_data[idx]["color"] = color
                         
@@ -107,7 +107,7 @@ class KeypointStorage:
                 # normalized_reliability = min(max(reliability / maximum, minimum), 1.0)
                 norm = Normalize(vmin=minimum, vmax=maximum)
                 normalized_reliability = norm(reliability)
-                color = cm.plasma(normalized_reliability)[:3]
+                color = cm.inferno(normalized_reliability)[:3]
                 color = tuple([int(c * 255) for c in color])
                 self.keypoints_data[new_id] = {
                     "coords": kp_coords,
